@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="theme-color" content="#080612"/>
+  <meta name="description" content="SoloForce — AI-powered safe navigation for women. Real-time safety scores, route planning & emergency tools."/>
+  <title>SoloForce — Safe Navigation for Women</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════
+     SPLASH / LOADING SCREEN
+═══════════════════════════════════════════ -->
+<div id="loaderScreen" class="loader-screen">
+  <div class="loader-orbs">
+    <div class="lorb lorb1"></div>
+    <div class="lorb lorb2"></div>
+    <div class="lorb lorb3"></div>
+    <div class="lorb lorb4"></div>
+  </div>
+  <div class="loader-grid"></div>
+  <div class="loader-body">
+    <!-- Animated Logo -->
+    <div class="loader-logo-ring">
+      <svg class="loader-svg" viewBox="0 0 80 80" fill="none">
+        <circle cx="40" cy="40" r="37" stroke="url(#ls1)" stroke-width="1" opacity="0.25" stroke-dasharray="6 4"/>
+        <circle cx="40" cy="40" r="28" stroke="url(#ls1)" stroke-width="0.6" opacity="0.15"/>
+        <path d="M40 10C40 10 56 22 56 37C56 46 49 53 40 53C31 53 24 46 24 37C24 22 40 10 40 10Z" fill="url(#ls2)"/>
+        <circle cx="40" cy="37" r="8.5" fill="white" opacity="0.95"/>
+        <circle cx="40" cy="37" r="4" fill="url(#ls1)" opacity="0.55"/>
+        <path d="M40 53V63" stroke="url(#ls1)" stroke-width="3.5" stroke-linecap="round"/>
+        <path d="M31 59H49" stroke="url(#ls1)" stroke-width="3.5" stroke-linecap="round"/>
+        <defs>
+          <linearGradient id="ls1" x1="0" y1="0" x2="80" y2="80"><stop offset="0%" stop-color="#f0abfc"/><stop offset="50%" stop-color="#c084fc"/><stop offset="100%" stop-color="#7c3aed"/></linearGradient>
+          <linearGradient id="ls2" x1="24" y1="10" x2="56" y2="53"><stop offset="0%" stop-color="#f5d0fe"/><stop offset="100%" stop-color="#6d28d9"/></linearGradient>
+        </defs>
+      </svg>
+      <div class="loader-ring r1"></div>
+      <div class="loader-ring r2"></div>
+      <div class="loader-dots">
+        <span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
+      </div>
+    </div>
+
+    <!-- Text -->
+    <h1 class="loader-title">SoloForce</h1>
+    <p class="loader-subtitle">Safe Navigation for Women</p>
+
+    <!-- Progress -->
+    <div class="loader-progress">
+      <div class="loader-bar-track">
+        <div class="loader-bar-fill" id="loaderBar"></div>
+        <div class="loader-bar-glow"></div>
+      </div>
+      <p class="loader-status" id="loaderStatus">Initialising safety systems…</p>
+    </div>
+
+    <p class="loader-quote">"One Woman. Infinite Power."</p>
+  </div>
+
+  <!-- Feature badges -->
+  <div class="loader-features">
+    <span class="lf-badge">🗺 Smart Routes</span>
+    <span class="lf-badge">🤖 AI Companion</span>
+    <span class="lf-badge">🆘 Emergency SOS</span>
+    <span class="lf-badge">📊 Live Analytics</span>
+  </div>
+
+  <!-- Made by -->
+  <div class="loader-credit">
+    <svg viewBox="0 0 14 14" fill="none" style="width:11px;height:11px;flex-shrink:0">
+      <circle cx="7" cy="7" r="6.2" stroke="#a78bfa" stroke-width="0.9"/>
+      <path d="M7 2.5C7 2.5 10 4.8 10 7.2C10 8.8 8.7 10 7 10C5.3 10 4 8.8 4 7.2C4 4.8 7 2.5 7 2.5Z" fill="#a78bfa" opacity="0.65"/>
+      <circle cx="7" cy="7.2" r="1.5" fill="white" opacity="0.85"/>
+    </svg>
+    Made with 💜 by <strong>SoloForce Team</strong> &nbsp;·&nbsp; Elite Her Hackathon 2025
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     HEADER
+═══════════════════════════════════════════ -->
+<header class="header" id="appHeader">
+  <div class="header-inner">
+
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 40 40" fill="none">
+          <circle cx="20" cy="20" r="18.5" stroke="url(#hg1)" stroke-width="1.2"/>
+          <path d="M20 6C20 6 28 13 28 21C28 25.4 24.4 29 20 29C15.6 29 12 25.4 12 21C12 13 20 6 20 6Z" fill="url(#hg2)" opacity="0.9"/>
+          <circle cx="20" cy="21" r="4" fill="white" opacity="0.95"/>
+          <path d="M20 29V34" stroke="url(#hg1)" stroke-width="2" stroke-linecap="round"/>
+          <path d="M16 32H24" stroke="url(#hg1)" stroke-width="2" stroke-linecap="round"/>
+          <defs>
+            <linearGradient id="hg1" x1="0" y1="0" x2="40" y2="40"><stop offset="0%" stop-color="#e879f9"/><stop offset="100%" stop-color="#7c3aed"/></linearGradient>
+            <linearGradient id="hg2" x1="12" y1="6" x2="28" y2="29"><stop offset="0%" stop-color="#f0abfc"/><stop offset="100%" stop-color="#7c3aed"/></linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div class="logo-text">
+        <span class="logo-name">SoloForce</span>
+        <span class="logo-tag">Safe Navigation</span>
+      </div>
+    </div>
+
+    <nav class="desktop-nav" id="desktopNav">
+      <button class="nav-btn active" data-tab="map"       onclick="switchTab('map',this)">🗺 Map</button>
+      <button class="nav-btn"        data-tab="report"    onclick="switchTab('report',this)">📍 Report</button>
+      <button class="nav-btn"        data-tab="analytics" onclick="switchTab('analytics',this)">📊 Analytics</button>
+    </nav>
+
+    <div class="hdr-actions">
+      <div class="sw-widget">
+        <div id="swIdle">
+          <button class="sw-idle-btn" onclick="openSafeWalkSetup()">🚶 Safe Walk</button>
+        </div>
+        <div id="swActive" style="display:none" class="sw-active-row">
+          <span class="sw-lbl">Safe in</span>
+          <span class="sw-cd" id="swCountdown">15:00</span>
+          <button class="sw-ok" onclick="markSafe()">✓</button>
+        </div>
+      </div>
+      <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
+        <span id="themeIcon">☀️</span>
+      </button>
+      <button class="sos-btn" onclick="triggerSOS()">
+        <span class="sos-pulse"></span>🆘 SOS
+      </button>
+      <button class="mob-locate-btn" onclick="locateMe()" aria-label="Use my location" title="My location">📍</button>
+      <button class="ham-btn" id="hamBtn" onclick="toggleMobileMenu()" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Mobile nav drawer -->
+  <div class="mob-nav" id="mobNav">
+    <button class="mob-nav-btn active" data-tab="map"       onclick="switchTab('map',this);closeMobileMenu()">🗺 Map</button>
+    <button class="mob-nav-btn"        data-tab="report"    onclick="switchTab('report',this);closeMobileMenu()">📍 Report</button>
+    <button class="mob-nav-btn"        data-tab="analytics" onclick="switchTab('analytics',this);closeMobileMenu()">📊 Analytics</button>
+  </div>
+</header>
+
+
+<!-- ═══════════════════════════════════════════
+     SEARCH BAR
+═══════════════════════════════════════════ -->
+<section class="search-bar">
+  <div class="search-inner">
+    <div class="search-inputs">
+      <div class="inp-wrap">
+        <span class="inp-ico">📍</span>
+        <input id="originInput" class="s-inp" type="text" placeholder="Your location…" autocomplete="off"/>
+        <div class="ac-drop" id="originDropdown"></div>
+      </div>
+      <button class="swap-btn" onclick="swapLocations()" title="Swap">⇅</button>
+      <div class="inp-wrap">
+        <span class="inp-ico">🏁</span>
+        <input id="destInput" class="s-inp" type="text" placeholder="Where to?" autocomplete="off"/>
+        <div class="ac-drop" id="destDropdown"></div>
+      </div>
+      <button class="find-btn" id="findBtn" onclick="findRoutes()">
+        <span class="find-txt">Find Safe Routes</span>
+        <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;flex-shrink:0"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      </button>
+      <button class="loc-btn" onclick="locateMe()" title="Use my location">📍</button>
+    </div>
+    <div class="filter-bar">
+      <span class="filter-lbl">Layers</span>
+      <label class="chip"><input type="checkbox" checked onchange="toggleLayer('safeZones')"/><span>🟢 Safe</span></label>
+      <label class="chip"><input type="checkbox" checked onchange="toggleLayer('crime')"/><span>🔴 Crime</span></label>
+      <label class="chip"><input type="checkbox" checked onchange="toggleLayer('lighting')"/><span>🟡 Lighting</span></label>
+      <label class="chip"><input type="checkbox" checked onchange="toggleLayer('reports')"/><span>🔵 Reports</span></label>
+      <div class="time-pills">
+        <button class="t-pill active" id="btnDay"   onclick="setTime('day')">☀️ Day</button>
+        <button class="t-pill"        id="btnNight" onclick="setTime('night')">🌙 Night</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════
+     MAIN CONTENT
+═══════════════════════════════════════════ -->
+<main class="main" id="main" role="main" style="min-height:0">
+
+  <!-- ── MAP TAB ── -->
+  <div class="tab-pane active" id="tab-map">
+    <div class="map-layout">
+
+      <!-- Map -->
+      <div class="map-wrap" id="mapWrap">
+        <div id="map"></div>
+
+        <!-- Desktop map overlays -->
+        <div class="map-legend">
+          <p class="leg-title">Legend</p>
+          <div class="leg-row"><span class="leg-dot green"></span>Safe Route</div>
+          <div class="leg-row"><span class="leg-dot yellow"></span>Moderate</div>
+          <div class="leg-row"><span class="leg-dot red"></span>Risky</div>
+          <div class="leg-row"><span>📌</span> Safe Zone</div>
+          <div class="leg-row"><span>⚠️</span> Crime Zone</div>
+          <div class="leg-row"><span>🔵</span> Report</div>
+        </div>
+        <button class="pin-btn" id="pinBtn" onclick="startPinMode()">📌 Report Area</button>
+        <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleMobileSidebar()">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px"><path fill-rule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+          Routes
+        </button>
+
+        <!-- ── MOBILE ONLY overlays ── -->
+
+        <!-- Floating search pill (mobile) — shares same input IDs as desktop -->
+        <div class="mob-search-pill">
+          <div class="mob-pill-inputs">
+            <div class="mob-pill-row">
+              <span class="inp-ico">📍</span>
+              <input id="mobOrigin" class="s-inp" type="text" placeholder="Your location…" autocomplete="off"
+                oninput="mobSyncOrigin(this.value)" onkeydown="if(event.key==='Enter')findRoutesMob()"/>
+              <button style="background:none;border:none;font-size:.75rem;color:var(--text3);padding:0 2px;flex-shrink:0" onclick="locateMe()" title="My location">📍</button>
+            </div>
+            <div class="mob-pill-divider"></div>
+            <div class="mob-pill-row">
+              <span class="inp-ico">🏁</span>
+              <input id="mobDest" class="s-inp" type="text" placeholder="Where to?" autocomplete="off"
+                oninput="mobSyncDest(this.value)" onkeydown="if(event.key==='Enter')findRoutesMob()"/>
+            </div>
+            <div class="ac-drop" id="mobOriginDrop"></div>
+            <div class="ac-drop" id="mobDestDrop"></div>
+          </div>
+          <button class="mob-pill-go" onclick="findRoutesMob()" aria-label="Find routes">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:18px;height:18px"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          </button>
+        </div>
+
+        <!-- Floating SOS button -->
+        <button class="mob-sos-float" onclick="triggerSOS()" aria-label="Emergency SOS">
+          <span class="sos-pulse"></span>🆘
+        </button>
+
+        <!-- Floating theme toggle -->
+        <button class="mob-theme-float" onclick="toggleTheme()" aria-label="Toggle theme">
+          <span id="themeIconMob">☀️</span>
+        </button>
+      </div>
+
+      <!-- Sidebar -->
+      <div class="sidebar" id="sidebar">
+        <div class="sidebar-tabs">
+          <button class="stab active" onclick="switchSidebar('routes',this)">Routes</button>
+          <button class="stab"        onclick="switchSidebar('safety',this)">Safety</button>
+          <button class="stab"        onclick="switchSidebar('emergency',this)">Emergency</button>
+        </div>
+
+        <!-- Routes Panel -->
+        <div class="sp active" id="sp-routes">
+          <div class="sp-hdr">
+            <span class="sp-title">Suggested Routes</span>
+            <span class="badge" id="routeCount">3 routes</span>
+          </div>
+          <p class="sp-hint">Ranked by safety score. Tap to highlight on map.</p>
+          <div id="routeCards"></div>
+        </div>
+
+        <!-- Safety Panel -->
+        <div class="sp" id="sp-safety">
+          <div class="sp-hdr"><span class="sp-title">Area Safety Overview</span></div>
+          <div class="meters">
+            <div class="meter">
+              <div class="meter-lbl"><span>💡 Lighting</span><span class="mv" id="lightVal">72%</span></div>
+              <div class="meter-bar"><div class="mf good" id="lightFill" style="width:72%"></div></div>
+            </div>
+            <div class="meter">
+              <div class="meter-lbl"><span>👥 Crowd Density</span><span class="mv" id="crowdVal">58%</span></div>
+              <div class="meter-bar"><div class="mf medium" id="crowdFill" style="width:58%"></div></div>
+            </div>
+            <div class="meter">
+              <div class="meter-lbl"><span>🚨 Crime Risk</span><span class="mv danger-txt" id="crimeVal">34%</span></div>
+              <div class="meter-bar"><div class="mf danger" id="crimeFill" style="width:34%"></div></div>
+            </div>
+          </div>
+          <div class="score-card">
+            <div class="score-ring-wrap">
+              <svg viewBox="0 0 80 80" style="width:76px;height:76px">
+                <circle cx="40" cy="40" r="32" fill="none" stroke="var(--surface2)" stroke-width="8"/>
+                <circle cx="40" cy="40" r="32" fill="none" stroke="url(#scg)" stroke-width="8"
+                  stroke-dasharray="201" stroke-dashoffset="60" stroke-linecap="round"
+                  transform="rotate(-90 40 40)" id="scoreArc"/>
+                <defs><linearGradient id="scg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#22c55e"/><stop offset="100%" stop-color="#a78bfa"/></linearGradient></defs>
+              </svg>
+              <div class="score-num" id="overallScore">70</div>
+            </div>
+            <div>
+              <p class="score-lbl">Overall Safety Score</p>
+              <p class="score-sub" id="scoreDesc">Moderate — Stay alert</p>
+              <button class="score-why-btn" onclick="openScoreExplainer()">Why this score? →</button>
+            </div>
+          </div>
+          <!-- Nearby Safe Spots -->
+          <div class="nearby-wrap">
+            <div class="sp-hdr" style="margin-top:12px">
+              <span class="sp-title">🏥 Safe Spots Nearby</span>
+              <button class="find-nearby-btn" onclick="findNearby()">Find</button>
+            </div>
+            <div id="nearbyList"><p class="sp-hint">Tap Find to locate nearest safe spots.</p></div>
+          </div>
+        </div>
+
+        <!-- Emergency Panel -->
+        <div class="sp" id="sp-emergency">
+          <div class="sp-hdr"><span class="sp-title">Emergency Contacts</span></div>
+          <p class="sp-hint">Tap any button to call instantly. Works on mobile.</p>
+          <div id="emergencyContacts"></div>
+          <div class="divider"></div>
+
+          <p class="label-heading">👤 Trusted Contact</p>
+          <p class="sp-hint">Save a contact to receive WhatsApp + SMS alerts when you trigger SOS.</p>
+          <div class="tc-row">
+            <input type="text" id="trustedName"  class="s-inp" placeholder="Contact name" style="flex:1;min-width:0"/>
+            <input type="tel"  id="trustedPhone" class="s-inp" placeholder="+91 phone number" style="flex:1;min-width:0"/>
+            <button class="save-btn" onclick="saveTrustedContact()">Save</button>
+          </div>
+          <div id="savedContact" class="saved-display"></div>
+
+          <!-- Trusted contact quick actions (shown after saving) -->
+          <div id="trustedQuickActions" style="display:none;margin-top:8px" class="trusted-quick">
+            <a id="tcWhatsApp" href="#" target="_blank" class="tc-action-btn wa">💬 WhatsApp Alert</a>
+            <a id="tcCall"     href="#" class="tc-action-btn call">📞 Call Contact</a>
+            <a id="tcSMS"      href="#" class="tc-action-btn sms-btn">✉️ SMS Alert</a>
+          </div>
+
+          <div class="divider"></div>
+          <p class="label-heading">🚶 Safe Walk Timer</p>
+          <p class="sp-hint">If you don't check in before the timer ends, SOS fires automatically.</p>
+          <div class="mob-sw-shortcut" id="mobSWShortcut"></div>
+          <div class="sw-setup">
+            <select id="swMinutes" class="s-inp" style="width:auto">
+              <option value="5">5 min</option>
+              <option value="10">10 min</option>
+              <option value="15" selected>15 min</option>
+              <option value="20">20 min</option>
+              <option value="30">30 min</option>
+            </select>
+            <button class="save-btn green" onclick="startSafeWalk()">Start Walk</button>
+          </div>
+        </div>
+      </div><!-- /sidebar -->
+
+    </div><!-- /map-layout -->
+
+    <!-- ── MOBILE BOTTOM DRAWER ── -->
+    <div class="mob-drawer" id="mobDrawer">
+      <div class="mob-drawer-handle" onclick="toggleMobDrawer()"></div>
+      <div class="mob-drawer-tabs">
+        <button class="mob-dtab active" onclick="switchMobDrawer('routes',this)">Routes</button>
+        <button class="mob-dtab"        onclick="switchMobDrawer('safety',this)">Safety</button>
+        <button class="mob-dtab"        onclick="switchMobDrawer('emergency',this)">Emergency</button>
+      </div>
+      <div class="mob-drawer-body">
+        <!-- Routes -->
+        <div class="mob-dpanel active" id="mdp-routes">
+          <div class="sp-hdr" style="margin-bottom:8px">
+            <span class="sp-title">Suggested Routes</span>
+            <span class="badge" id="mobRouteCount">3 routes</span>
+          </div>
+          <p class="sp-hint">Tap to highlight on map.</p>
+          <div id="mobRouteCards"></div>
+        </div>
+        <!-- Safety -->
+        <div class="mob-dpanel" id="mdp-safety">
+          <div class="sp-hdr" style="margin-bottom:10px"><span class="sp-title">Area Safety</span></div>
+          <div class="meters">
+            <div class="meter">
+              <div class="meter-lbl"><span>💡 Lighting</span><span class="mv" id="mob-lightVal">72%</span></div>
+              <div class="meter-bar"><div class="mf good" id="mob-lightFill" style="width:72%"></div></div>
+            </div>
+            <div class="meter">
+              <div class="meter-lbl"><span>👥 Crowd</span><span class="mv" id="mob-crowdVal">58%</span></div>
+              <div class="meter-bar"><div class="mf medium" id="mob-crowdFill" style="width:58%"></div></div>
+            </div>
+            <div class="meter">
+              <div class="meter-lbl"><span>🚨 Crime Risk</span><span class="mv danger-txt" id="mob-crimeVal">34%</span></div>
+              <div class="meter-bar"><div class="mf danger" id="mob-crimeFill" style="width:34%"></div></div>
+            </div>
+          </div>
+          <div class="score-card" style="margin-top:12px">
+            <div class="score-ring-wrap">
+              <svg viewBox="0 0 80 80" style="width:60px;height:60px">
+                <circle cx="40" cy="40" r="32" fill="none" stroke="var(--surface2)" stroke-width="8"/>
+                <circle cx="40" cy="40" r="32" fill="none" stroke="url(#scgm)" stroke-width="8"
+                  stroke-dasharray="201" stroke-dashoffset="60" stroke-linecap="round"
+                  transform="rotate(-90 40 40)" id="mob-scoreArc"/>
+                <defs><linearGradient id="scgm" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#22c55e"/><stop offset="100%" stop-color="#a78bfa"/></linearGradient></defs>
+              </svg>
+              <div class="score-num" id="mob-overallScore">70</div>
+            </div>
+            <div>
+              <p class="score-lbl">Safety Score</p>
+              <p class="score-sub" id="mob-scoreDesc">Moderate</p>
+            </div>
+          </div>
+        </div>
+        <!-- Emergency -->
+        <div class="mob-dpanel" id="mdp-emergency">
+          <div class="sp-hdr" style="margin-bottom:8px"><span class="sp-title">Emergency</span></div>
+          <div id="mobEmergencyContacts"></div>
+          <div class="divider"></div>
+          <p class="label-heading" style="margin-bottom:7px">🚶 Safe Walk Timer</p>
+          <div class="sw-setup">
+            <select id="swMinutesMob" class="s-inp" style="width:auto;flex:1">
+              <option value="5">5 min</option><option value="10">10 min</option>
+              <option value="15" selected>15 min</option><option value="20">20 min</option>
+              <option value="30">30 min</option>
+            </select>
+            <button class="save-btn green" onclick="startSafeWalkMob()" style="flex:1;min-height:40px">Start Walk</button>
+          </div>
+          <div id="mobSwActive" style="display:none" class="sw-active-row" style="margin-top:8px">
+            <span class="sw-lbl">Safe in</span>
+            <span class="sw-cd" id="mobSwCountdown">15:00</span>
+            <button class="sw-ok" onclick="markSafe()">✓ Safe</button>
+          </div>
+          <div class="divider"></div>
+          <p class="label-heading" style="margin-bottom:7px">👤 Trusted Contact</p>
+          <div class="tc-row" style="gap:6px">
+            <input type="text" id="trustedNameMob"  class="s-inp" placeholder="Name"/>
+            <input type="tel"  id="trustedPhoneMob" class="s-inp" placeholder="+91 phone"/>
+            <button class="save-btn" onclick="saveTrustedContactMob()" style="min-height:40px">Save</button>
+          </div>
+          <div id="savedContactMob" class="saved-display" style="margin-top:6px"></div>
+          <div id="trustedQuickMob" style="display:none;flex-direction:column;gap:6px;margin-top:8px"></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /tab-map -->
+
+
+  <!-- ── REPORT TAB ── -->
+  <div class="tab-pane" id="tab-report">
+    <div class="page-body">
+      <div class="page-hero">
+        <h1 class="page-title">📍 Report an Unsafe Area</h1>
+        <p class="page-sub">Help keep the community safe by reporting incidents.</p>
+      </div>
+      <div class="form-card">
+        <div class="form-group">
+          <label class="form-lbl">Incident Type</label>
+          <div class="inc-grid" id="incidentTypeGrid">
+            <button class="inc-btn active" data-type="harassment"   onclick="selectIncType(this)">😰 Harassment</button>
+            <button class="inc-btn"        data-type="poor_lighting" onclick="selectIncType(this)">💡 Poor Lighting</button>
+            <button class="inc-btn"        data-type="theft"         onclick="selectIncType(this)">👜 Theft</button>
+            <button class="inc-btn"        data-type="suspicious"    onclick="selectIncType(this)">👁 Suspicious</button>
+            <button class="inc-btn"        data-type="unsafe_road"   onclick="selectIncType(this)">🚧 Unsafe Road</button>
+            <button class="inc-btn"        data-type="other"         onclick="selectIncType(this)">📝 Other</button>
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-lbl">Location</label>
+            <input type="text" id="reportLocation" class="s-inp" placeholder="e.g. Park Street near Metro" style="width:100%"/>
+          </div>
+          <div class="form-group">
+            <label class="form-lbl">When</label>
+            <select id="reportTime" class="s-inp" style="width:100%">
+              <option>Just now</option><option>Within 1 hour</option>
+              <option>Today</option><option>Yesterday</option><option>This week</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-lbl">Description <span class="form-opt">(optional)</span></label>
+          <textarea id="reportDesc" class="report-ta" placeholder="Briefly describe what happened…"></textarea>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-lbl">Severity</label>
+            <div class="sev-row">
+              <label class="sev-chip"><input type="radio" name="sev" value="low" checked/><span>Low</span></label>
+              <label class="sev-chip"><input type="radio" name="sev" value="medium"/><span>Medium</span></label>
+              <label class="sev-chip"><input type="radio" name="sev" value="high"/><span>High</span></label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-lbl">Privacy</label>
+            <label class="chip" style="width:fit-content"><input type="checkbox" id="reportAnon" checked/><span>Stay Anonymous</span></label>
+          </div>
+        </div>
+        <button class="submit-btn" onclick="submitReport()">Submit Report →</button>
+      </div>
+      <div class="feed-section">
+        <h2 class="feed-title">Recent Community Reports</h2>
+        <div id="reportsFeed" class="feed-list"></div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ── ANALYTICS TAB ── -->
+  <div class="tab-pane" id="tab-analytics">
+    <div class="page-body">
+      <div class="page-hero">
+        <h1 class="page-title">📊 Safety Analytics</h1>
+        <p class="page-sub">Community-driven safety intelligence for your area.</p>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card">          <div class="stat-n" id="statReports">24</div><div class="stat-l">Reports This Week</div></div>
+        <div class="stat-card safe-c">   <div class="stat-n">78%</div><div class="stat-l">Routes Rated Safe</div></div>
+        <div class="stat-card warn-c">   <div class="stat-n">3</div><div class="stat-l">Active Danger Zones</div></div>
+        <div class="stat-card purple-c"> <div class="stat-n" id="statUsers">142</div><div class="stat-l">Community Members</div></div>
+      </div>
+      <div class="chart-card">
+        <h3 class="chart-t">🕐 Safety by Hour of Day</h3>
+        <p class="sp-hint" style="margin-bottom:12px">Darker bars = more incidents reported at that hour.</p>
+        <div class="hour-chart" id="hourChart"></div>
+        <div class="hour-labels"><span>12am</span><span>3am</span><span>6am</span><span>9am</span><span>12pm</span><span>3pm</span><span>6pm</span><span>9pm</span></div>
+      </div>
+      <div class="chart-card">
+        <h3 class="chart-t">📋 Incident Type Breakdown</h3>
+        <div id="incidentBreakdown" class="inc-breakdown"></div>
+      </div>
+      <div class="chart-card">
+        <h3 class="chart-t">📈 Weekly Safety Trend</h3>
+        <div class="trend-chart" id="trendChart"></div>
+        <div class="trend-labels" id="trendLabels"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+
+<!-- ═══════════════════════════════════════════
+     FOOTER
+═══════════════════════════════════════════ -->
+<footer class="app-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <svg viewBox="0 0 20 20" fill="none" style="width:16px;height:16px;flex-shrink:0">
+        <circle cx="10" cy="10" r="9" stroke="url(#ffg)" stroke-width="1.2"/>
+        <path d="M10 3C10 3 14 6 14 10.5C14 12.9 12.2 14.5 10 14.5C7.8 14.5 6 12.9 6 10.5C6 6 10 3 10 3Z" fill="url(#ffg2)" opacity="0.8"/>
+        <circle cx="10" cy="10.5" r="2.2" fill="white" opacity="0.9"/>
+        <defs>
+          <linearGradient id="ffg" x1="0" y1="0" x2="20" y2="20"><stop offset="0%" stop-color="#e879f9"/><stop offset="100%" stop-color="#7c3aed"/></linearGradient>
+          <linearGradient id="ffg2" x1="6" y1="3" x2="14" y2="14.5"><stop offset="0%" stop-color="#f0abfc"/><stop offset="100%" stop-color="#7c3aed"/></linearGradient>
+        </defs>
+      </svg>
+      Made with 💜 by <strong>SoloForce Team</strong>
+    </div>
+    <div class="footer-mid">Elite Her Hackathon 2025 &nbsp;·&nbsp; Safe Navigation for Women &nbsp;·&nbsp; AI-Powered</div>
+    <div class="footer-end">Emergency: <a href="tel:1091" class="footer-sos">1091</a></div>
+  </div>
+</footer>
+
+
+<!-- ═══════════════════════════════════════════
+     AI CHAT
+═══════════════════════════════════════════ -->
+<button class="ai-fab" onclick="toggleAIChat()" aria-label="Open AI Safety Chat">
+  <span class="ai-fab-star">✦</span>
+  <span class="ai-fab-txt">AI Safety</span>
+</button>
+<div class="ai-panel" id="aiChatPanel" role="dialog" aria-label="SafeGuide AI Chat">
+  <div class="ai-hdr">
+    <div class="ai-hdr-l">
+      <div class="ai-avatar">✦</div>
+      <div><p class="ai-name">SafeGuide AI</p><p class="ai-powered"></p></div>
+    </div>
+    <button class="ai-x" onclick="toggleAIChat()" aria-label="Close">✕</button>
+  </div>
+  <div class="ai-msgs" id="aiMessages">
+    <div class="ai-msg bot">
+      <div class="ai-av-sm">✦</div>
+      <div class="ai-bubble">Hi! I'm SafeGuide. Ask me anything — "Is it safe to walk alone at night near Park Street?" or "What to do if I feel followed?"</div>
+    </div>
+  </div>
+  <div class="ai-inp-row">
+    <input type="text" id="aiInput" class="ai-inp" placeholder="Ask about safety…" onkeydown="if(event.key==='Enter')sendAIMessage()"/>
+    <button class="ai-send" onclick="sendAIMessage()" aria-label="Send">➤</button>
+  </div>
+  <div class="ai-prompts">
+    <button class="qp" onclick="quickPrompt('Is it safe to walk alone at night?')">🌙 Walk at night?</button>
+    <button class="qp" onclick="quickPrompt('What to do if I feel followed?')">🚨 If followed?</button>
+    <button class="qp" onclick="quickPrompt('Give me top safety tips')">💡 Safety tips</button>
+    <button class="qp" onclick="quickPrompt('How does the safety score work?')">📊 Safety score?</button>
+    <button class="qp" onclick="quickPrompt('How do I set up trusted contact and safe walk timer?')">🚶 Safe Walk?</button>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     MODALS
+═══════════════════════════════════════════ -->
+<!-- SOS -->
+<div class="overlay" id="sosModal" role="dialog" aria-modal="true">
+  <div class="modal sos-modal">
+    <div class="sos-bg-pulse"></div>
+    <div style="font-size:2.6rem;text-align:center;margin-bottom:6px" aria-hidden="true">🆘</div>
+    <h2 class="modal-title red">Emergency Alert</h2>
+    <p class="modal-sub">Use the buttons below to immediately contact help or notify your trusted contact.</p>
+
+    <!-- Location info -->
+    <div class="modal-details">
+      <div class="detail-row"><span>📍 Your Location</span><span id="sosLocation">Fetching…</span></div>
+      <div class="detail-row"><span>⏰ Time</span><span id="sosTime"></span></div>
+      <div class="detail-row"><span>🔗 Maps Link</span><a id="sosMapsLink" href="#" target="_blank" class="maps-link">Open in Maps</a></div>
+    </div>
+
+    <!-- STEP 1: Call emergency services -->
+    <div class="sos-section-label">STEP 1 — Call Emergency Services</div>
+    <div class="sos-cta">
+      <a href="tel:1091" class="sos-call women" onclick="logSOSAction('Women Helpline')">
+        <span class="sos-call-icon">📞</span>
+        <span class="sos-call-body"><strong>Women Helpline</strong><small>Tap to call 1091 now</small></span>
+      </a>
+      <a href="tel:100" class="sos-call police" onclick="logSOSAction('Police')">
+        <span class="sos-call-icon">🚔</span>
+        <span class="sos-call-body"><strong>Police</strong><small>Tap to call 100 now</small></span>
+      </a>
+      <a href="tel:102" class="sos-call ambulance" onclick="logSOSAction('Ambulance')">
+        <span class="sos-call-icon">🚑</span>
+        <span class="sos-call-body"><strong>Ambulance</strong><small>Tap to call 102 now</small></span>
+      </a>
+    </div>
+
+    <!-- STEP 2: Notify trusted contact -->
+    <div class="sos-section-label">STEP 2 — Notify Trusted Contact</div>
+    <div id="sosTrustedActions" class="sos-trusted-actions">
+      <!-- Populated by JS -->
+    </div>
+
+    <!-- STEP 3: Share location -->
+    <div class="sos-section-label">STEP 3 — Share Your Location</div>
+    <div class="sos-share-row">
+      <button class="sos-share-btn" onclick="copyEmergencyMsg()">📋 Copy SOS Message</button>
+      <a id="sosWhatsAppShare" href="#" target="_blank" class="sos-share-btn whatsapp">💬 Share via WhatsApp</a>
+      <a id="sosSMSShare" href="#" class="sos-share-btn sms">✉️ Send SMS</a>
+    </div>
+
+    <button class="modal-ok" onclick="closeModal('sosModal')" style="margin-top:10px">✓ I'm Safe — Close</button>
+  </div>
+</div>
+
+<!-- Safe Walk Alert -->
+<div class="overlay" id="swAlertModal">
+  <div class="modal">
+    <div style="font-size:2.4rem;text-align:center;margin-bottom:8px">⏰</div>
+    <h2 class="modal-title" style="color:var(--warn)">Safe Walk Timer Expired!</h2>
+    <p class="modal-sub">SOS triggers in <span id="swCountdownAlert" style="color:var(--danger);font-weight:800">10</span> seconds.</p>
+    <button class="modal-ok" onclick="cancelSWAlert()" style="background:var(--warn)">I'm Safe — Cancel</button>
+  </div>
+</div>
+
+<!-- Score Explainer -->
+<div class="overlay" id="scoreModal">
+  <div class="modal">
+    <button class="modal-x-btn" onclick="closeModal('scoreModal')">✕</button>
+    <h3 class="modal-section-t">Score Breakdown</h3>
+    <div id="scoreBreakdownContent"></div>
+  </div>
+</div>
+
+<!-- Route Detail -->
+<div class="overlay" id="routeModal">
+  <div class="modal">
+    <button class="modal-x-btn" onclick="closeModal('routeModal')">✕</button>
+    <div id="routeModalContent"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- ── MOBILE BOTTOM NAV ── -->
+<nav class="mob-bottom-nav" id="mobBottomNav" aria-label="Mobile navigation">
+  <button class="mob-nav-item active" data-tab="map" onclick="switchMobTab('map',this)">
+    <span class="nav-icon">🗺</span>
+    <span>Map</span>
+  </button>
+  <button class="mob-nav-item" onclick="toggleMobDrawer()">
+    <span class="nav-icon">📍</span>
+    <span>Routes</span>
+  </button>
+  <button class="mob-nav-item" data-tab="report" onclick="switchMobTab('report',this)">
+    <span class="nav-icon">⚠️</span>
+    <span>Report</span>
+  </button>
+  <button class="mob-nav-item" data-tab="analytics" onclick="switchMobTab('analytics',this)">
+    <span class="nav-icon">📊</span>
+    <span>Stats</span>
+  </button>
+  <button class="mob-nav-item" onclick="switchMobDrawer('emergency',null);openMobDrawer()">
+    <span class="nav-icon">🆘</span>
+    <span>Help</span>
+  </button>
+</nav>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

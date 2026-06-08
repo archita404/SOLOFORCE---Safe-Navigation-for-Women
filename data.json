@@ -1,0 +1,83 @@
+{
+  "safeZones": [
+    { "id": "sz1", "name": "Park Street Metro Station", "lat": 22.5513, "lng": 88.3512, "type": "metro", "description": "Well-lit metro station, high foot traffic" },
+    { "id": "sz2", "name": "Central Hospital", "lat": 22.5726, "lng": 88.3639, "type": "hospital", "description": "24/7 emergency services available" },
+    { "id": "sz3", "name": "Esplanade Metro", "lat": 22.5598, "lng": 88.3514, "type": "metro", "description": "Busy transit hub, CCTV covered" },
+    { "id": "sz4", "name": "New Market Police Post", "lat": 22.5643, "lng": 88.3505, "type": "police", "description": "Active police presence" },
+    { "id": "sz5", "name": "Sealdah Station", "lat": 22.5652, "lng": 88.3700, "type": "transit", "description": "Major railway station, patrolled area" },
+    { "id": "sz6", "name": "Rabindra Sarani Metro", "lat": 22.5780, "lng": 88.3600, "type": "metro", "description": "Metro station with security guards" }
+  ],
+  "crimeZones": [
+    { "id": "cz1", "lat": 22.5480, "lng": 88.3450, "radius": 300, "severity": "high", "type": "crime", "description": "Reported incidents after 9 PM" },
+    { "id": "cz2", "lat": 22.5700, "lng": 88.3750, "radius": 250, "severity": "medium", "type": "crime", "description": "Pickpocketing reported" },
+    { "id": "cz3", "lat": 22.5620, "lng": 88.3580, "radius": 200, "severity": "low", "type": "crime", "description": "Occasional incidents reported" },
+    { "id": "cz4", "lat": 22.5550, "lng": 88.3680, "radius": 350, "severity": "high", "type": "crime", "description": "Poorly lit area, avoid at night" }
+  ],
+  "lightingZones": [
+    { "id": "lz1", "lat": 22.5530, "lng": 88.3490, "radius": 200, "level": "poor", "description": "Street lights non-functional" },
+    { "id": "lz2", "lat": 22.5610, "lng": 88.3620, "radius": 150, "level": "poor", "description": "Under-lit alley" },
+    { "id": "lz3", "lat": 22.5690, "lng": 88.3560, "radius": 180, "level": "poor", "description": "Dim lighting reported" }
+  ],
+  "routes": [
+    {
+      "id": "route1",
+      "name": "Safe Route via Park Street",
+      "safetyScore": 88,
+      "distance": "3.2 km",
+      "duration": "12 min",
+      "lighting": "Good",
+      "crowdDensity": "High",
+      "crimeLevel": "Low",
+      "waypoints": [
+        [22.5726, 88.3639],
+        [22.5650, 88.3600],
+        [22.5598, 88.3514],
+        [22.5513, 88.3512]
+      ],
+      "color": "#22c55e",
+      "highlights": ["Well-lit main road", "High footfall", "CCTV covered", "Near police post"]
+    },
+    {
+      "id": "route2",
+      "name": "Moderate Route via Sealdah",
+      "safetyScore": 62,
+      "distance": "2.8 km",
+      "duration": "10 min",
+      "lighting": "Moderate",
+      "crowdDensity": "Medium",
+      "crimeLevel": "Medium",
+      "waypoints": [
+        [22.5726, 88.3639],
+        [22.5690, 88.3690],
+        [22.5652, 88.3700],
+        [22.5600, 88.3650],
+        [22.5513, 88.3512]
+      ],
+      "color": "#f59e0b",
+      "highlights": ["Passes through Sealdah", "Some dark stretches", "Moderate crowd"]
+    },
+    {
+      "id": "route3",
+      "name": "Fast Route (Avoid at Night)",
+      "safetyScore": 31,
+      "distance": "2.1 km",
+      "duration": "8 min",
+      "lighting": "Poor",
+      "crowdDensity": "Low",
+      "crimeLevel": "High",
+      "waypoints": [
+        [22.5726, 88.3639],
+        [22.5640, 88.3580],
+        [22.5560, 88.3530],
+        [22.5513, 88.3512]
+      ],
+      "color": "#ef4444",
+      "highlights": ["Poorly lit streets", "Low foot traffic", "Near crime-reported zone", "Avoid after 8 PM"]
+    }
+  ],
+  "emergencyContacts": [
+    { "name": "Women Helpline", "number": "1091", "icon": "🆘" },
+    { "name": "Police", "number": "100", "icon": "🚔" },
+    { "name": "Ambulance", "number": "102", "icon": "🚑" }
+  ]
+}
