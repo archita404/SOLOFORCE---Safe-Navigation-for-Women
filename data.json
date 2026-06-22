@@ -1,4 +1,5 @@
 {
+  "demoRegionCenter": { "lat": 22.562, "lng": 88.358, "city": "Kolkata" },
   "safeZones": [
     { "id": "sz1", "name": "Park Street Metro Station", "lat": 22.5513, "lng": 88.3512, "type": "metro", "description": "Well-lit metro station, high foot traffic" },
     { "id": "sz2", "name": "Central Hospital", "lat": 22.5726, "lng": 88.3639, "type": "hospital", "description": "24/7 emergency services available" },

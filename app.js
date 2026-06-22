@@ -18,7 +18,7 @@
     { pct: 82, msg: 'Connecting AI companion…' },
     { pct: 100, msg: 'All systems ready. Stay safe 💜' },
   ];
-  const bar    = document.getElementById('loaderBar');
+  const bar = document.getElementById('loaderBar');
   const status = document.getElementById('loaderStatus');
   const screen = document.getElementById('loaderScreen');
   if (!screen) return;
@@ -44,65 +44,122 @@
    STATE
 ────────────────────────────────────────────── */
 let map;
-let safetyData        = null;
-let routeLayers       = [];
-let safeZoneMarkers   = [];
-let crimeCircles      = [];
-let lightingCircles   = [];
-let reportMarkers     = [];
-let liveRouteLayers   = [];
-let liveMarkers       = [];
-let currentRouteData  = null;
-let selectedRouteId   = null;
-let isNightMode       = false;
-let pinModeActive     = false;
-let swTimer           = null;
-let swSecondsLeft     = 0;
-let swAlertTimer      = null;
-let aiChatOpen        = false;
-let selectedIncType   = 'harassment';
-let currentTheme      = localStorage.getItem('sf_theme') || 'dark';
-let trustedContact    = JSON.parse(localStorage.getItem('sf_trusted') || 'null');
-let communityReports  = JSON.parse(localStorage.getItem('sf_reports') || '[]');
+let safetyData = null;
+let routeLayers = [];
+let safeZoneMarkers = [];
+let crimeCircles = [];
+let lightingCircles = [];
+let reportMarkers = [];
+let liveRouteLayers = [];
+let liveMarkers = [];
+let currentRouteData = null;
+let selectedRouteId = null;
+let isNightMode = false;
+let pinModeActive = false;
+let swTimer = null;
+let swSecondsLeft = 0;
+let swAlertTimer = null;
+let aiChatOpen = false;
+let selectedIncType = 'harassment';
+let currentTheme = localStorage.getItem('sf_theme') || 'dark';
+let trustedContact = JSON.parse(localStorage.getItem('sf_trusted') || 'null');
+let communityReports = JSON.parse(localStorage.getItem('sf_reports') || '[]');
+
+// NEW ENHANCEMENTS STATE VARIABLES
+let trustedContacts = JSON.parse(localStorage.getItem('sf_trusted_contacts') || '[]');
+if (trustedContact && trustedContacts.length === 0) {
+  trustedContacts.push(trustedContact);
+  localStorage.setItem('sf_trusted_contacts', JSON.stringify(trustedContacts));
+}
+let isTrackingActive = false;
+let trackerWatchId = null;
+let userLocMarker = null;
+let isHeatmapActive = false;
+let heatmapLayer = null;
+let shakeEnabled = localStorage.getItem('sf_shake_enabled') === 'true';
+let shakeCount = 0;
+let lastShakeTime = 0;
+let currentLanguage = localStorage.getItem('sf_lang') || 'en';
+let previewAnimationInterval = null;
+let previewMarker = null;
+let firebaseDb = null;
+let firebaseInitialized = false;
+
+// Firebase config — real project (soloforce-womensafety)
+const firebaseConfig = {
+  apiKey: "AIzaSyCKdO6sTuOjyNMnjG8g-_xm2004A0by2d0",
+  authDomain: "soloforce-womensafety.firebaseapp.com",
+  projectId: "soloforce-womensafety",
+  storageBucket: "soloforce-womensafety.firebasestorage.app",
+  messagingSenderId: "583593936318",
+  appId: "1:583593936318:web:1b01b0c7816784dff725ef"
+};
 
 const layerState = { safeZones: true, crime: true, lighting: true, reports: true };
 
-const INCIDENT_ICONS = { harassment:'😰', poor_lighting:'💡', theft:'👜', suspicious:'👁', unsafe_road:'🚧', other:'📝' };
-const INCIDENT_LABELS = { harassment:'Harassment', poor_lighting:'Poor Lighting', theft:'Theft / Pickpocket', suspicious:'Suspicious Activity', unsafe_road:'Unsafe Road', other:'Other' };
+const INCIDENT_ICONS = { harassment: '😰', poor_lighting: '💡', theft: '👜', suspicious: '👁', unsafe_road: '🚧', other: '📝' };
+const INCIDENT_LABELS = { harassment: 'Harassment', poor_lighting: 'Poor Lighting', theft: 'Theft / Pickpocket', suspicious: 'Suspicious Activity', unsafe_road: 'Unsafe Road', other: 'Other' };
 
 
 /* ──────────────────────────────────────────────
    INIT
 ────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', async () => {
+  initFirebase();
   applyTheme(currentTheme, false);
   initMap();
+
+  // Set default language dropdown value
+  const langSel = document.getElementById('langSelect');
+  if (langSel) langSel.value = currentLanguage;
+
   await loadData();
+
+  // Initialize dynamic OSM safe zones around starting view center
+  if (map) {
+    const center = map.getCenter();
+    fetchOSMSafeZones(center.lat, center.lng);
+
+    // Also fetch when map moves
+    map.on('moveend', () => {
+      const c = map.getCenter();
+      fetchOSMSafeZones(c.lat, c.lng);
+    });
+  }
 
   // Desktop
   renderRouteCards();
   renderEmergencyContacts();
-  renderCommunityReportsFeed();
+
+  // Real-time Firestore sync listener for community reports
+  dbListenReports(reports => {
+    communityReports = reports;
+    renderCommunityReportsFeed();
+    renderReportMarkers();
+    if (isHeatmapActive) renderHeatmap();
+  });
+
   renderAnalytics();
-  if (trustedContact) { renderSavedContact(); updateTrustedQuickActions(); }
+  renderTrustedContacts();
 
   // Mobile drawer
   renderMobEmergencyContacts();
   if (safetyData) renderMobRouteCards(safetyData.routes);
-  if (trustedContact) {
-    const nm = document.getElementById('trustedNameMob');
-    const pm = document.getElementById('trustedPhoneMob');
-    if (nm) nm.value = trustedContact.name;
-    if (pm) pm.value = trustedContact.phone;
-    const sd = document.getElementById('savedContactMob');
-    if (sd) sd.innerHTML = '✅ <strong>' + trustedContact.name + '</strong> — ' + trustedContact.phone;
-    updateMobTrustedActions();
-  }
+
+  // Setup Shake to SOS settings UI checkboxes
+  const sToggle = document.getElementById('shakeSosToggle');
+  const sToggleMob = document.getElementById('shakeSosToggleMob');
+  if (sToggle) sToggle.checked = shakeEnabled;
+  if (sToggleMob) sToggleMob.checked = shakeEnabled;
+  if (shakeEnabled) enableShakeListener();
 
   setupDrawerSwipe();
   setupMobileSwipeClose();
   setupAutocomplete('originInput', 'originDropdown');
-  setupAutocomplete('destInput',   'destDropdown');
+  setupAutocomplete('destInput', 'destDropdown');
+
+  // Translate UI texts to chosen language
+  applyLanguageUpdates();
 });
 
 
@@ -135,29 +192,79 @@ function applyTheme(theme, save = true) {
   if (mobIcon) mobIcon.textContent = THEME_ICONS[theme];
   // update map tiles if map is ready
   if (map && save) updateMapTiles(theme);
-  const msg = { dark:'🌑 Dark mode on', light:'☀️ Light mode on', night:'🌙 Night mode on' };
+  const msg = { dark: '🌑 Dark mode on', light: '☀️ Light mode on', night: '🌙 Night mode on' };
   if (save) showToast(msg[theme]);
 }
 
 function updateMapTiles(theme) {
-  map.eachLayer(l => { if (l._url && l._url.includes('cartocdn')) map.removeLayer(l); });
   const style = theme === 'light' ? 'light_all' : 'dark_all';
-  L.tileLayer(`https://{s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png`, {
+  const newLayer = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png`, {
     attribution: '© OpenStreetMap © CARTO', subdomains: 'abcd', maxZoom: 19
-  }).addTo(map);
+  });
+  newLayer.once('load', () => {
+    // Remove old carto layers once new layer completes loading to avoid flashing gray background
+    map.eachLayer(l => {
+      if (l._url && l._url.includes('cartocdn') && l !== newLayer) {
+        map.removeLayer(l);
+      }
+    });
+  });
+  newLayer.addTo(map);
 }
 
 
 /* ──────────────────────────────────────────────
    MAP
 ────────────────────────────────────────────── */
+// Default fallback center, only used if the browser has no geolocation
+// support AND no last-known position was ever saved. Not tied to any
+// specific city — just a neutral starting point so the map always renders.
+const DEFAULT_MAP_CENTER = [22.562, 88.358];
+const DEFAULT_MAP_ZOOM = 14;
+
 function initMap() {
-  map = L.map('map', { center: [22.562, 88.358], zoom: 14, zoomControl: true });
+  // Try last-known location first (instant, no permission prompt delay),
+  // then refine with a live geolocation fix once available.
+  const lastKnown = JSON.parse(localStorage.getItem('sf_last_loc') || 'null');
+  const startCenter = lastKnown || DEFAULT_MAP_CENTER;
+
+  map = L.map('map', { center: startCenter, zoom: DEFAULT_MAP_ZOOM, zoomControl: true });
   const style = currentTheme === 'light' ? 'light_all' : 'dark_all';
   L.tileLayer(`https://{s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png`, {
     attribution: '© OpenStreetMap © CARTO', subdomains: 'abcd', maxZoom: 19
   }).addTo(map);
   map.on('click', e => { if (pinModeActive) handleMapPin(e.latlng); else map.closePopup(); });
+
+  // Recenter on the user's real position as soon as we have it, and
+  // remember it for next launch so the app no longer boots into a
+  // hardcoded city by default.
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        localStorage.setItem('sf_last_loc', JSON.stringify([lat, lng]));
+        // Only recenter automatically if the user hasn't already
+        // started interacting with the map (panned/zoomed/searched).
+        if (!map._userInteracted) map.setView([lat, lng], DEFAULT_MAP_ZOOM);
+        // loadData() runs before this GPS fix resolves, so its demo-overlay
+        // check used the fallback center. Re-check now against the real
+        // position and re-render if it changes.
+        if (safetyData?.demoRegionCenter) {
+          const d = haversine(lat, lng, safetyData.demoRegionCenter.lat, safetyData.demoRegionCenter.lng);
+          const showDemo = d < 50;
+          if (showDemo !== safetyData._showDemoOverlay) {
+            safetyData._showDemoOverlay = showDemo;
+            renderMapLayers();
+          }
+        }
+      },
+      () => { /* permission denied or unavailable — keep fallback center */ },
+      { timeout: 8000, maximumAge: 5 * 60 * 1000 }
+    );
+  }
+
+  // Track manual interaction so we don't yank the map away mid-use
+  map.on('dragstart zoomstart', () => { map._userInteracted = true; });
 }
 
 async function loadData() {
@@ -166,6 +273,19 @@ async function loadData() {
     safetyData = await res.json();
   } catch {
     safetyData = getFallbackData();
+  }
+  // The crime/lighting/route data in data.json is curated DEMO data for
+  // one city (Kolkata, by default). It would be misleading to overlay
+  // those zones on a map centered somewhere else, so we only show them
+  // when the user's map view is actually near that demo region. Real
+  // safe-zone markers (police/hospital/transit) still load everywhere
+  // via fetchOSMSafeZones, since those come from live OSM data.
+  if (map && safetyData?.demoRegionCenter) {
+    const c = map.getCenter();
+    const d = haversine(c.lat, c.lng, safetyData.demoRegionCenter.lat, safetyData.demoRegionCenter.lng);
+    safetyData._showDemoOverlay = d < 50; // within ~50km of the demo city
+  } else {
+    safetyData._showDemoOverlay = true; // no center info — show by default
   }
   renderMapLayers();
 }
@@ -199,7 +319,8 @@ function renderRoutes() {
 }
 
 function pinMarker(latlng, emoji, label, color) {
-  const icon = L.divIcon({ className: '', iconAnchor: [17, 17],
+  const icon = L.divIcon({
+    className: '', iconAnchor: [17, 17],
     html: `<div style="width:34px;height:34px;background:rgba(8,6,18,.92);border:2px solid ${color};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 0 12px ${color}55">${emoji}</div>`
   });
   L.marker(latlng, { icon }).bindPopup(`<div class="popup-title">${label}</div>`).addTo(map);
@@ -208,9 +329,10 @@ function pinMarker(latlng, emoji, label, color) {
 function renderSafeZones() {
   safeZoneMarkers.forEach(m => map.removeLayer(m)); safeZoneMarkers = [];
   if (!layerState.safeZones) return;
-  const icons = { metro:'🚇', hospital:'🏥', police:'👮', transit:'🚉' };
+  const icons = { metro: '🚇', hospital: '🏥', police: '👮', transit: '🚉' };
   safetyData.safeZones.forEach(z => {
-    const icon = L.divIcon({ className: '', iconAnchor: [14, 14],
+    const icon = L.divIcon({
+      className: '', iconAnchor: [14, 14],
       html: `<div style="width:28px;height:28px;background:rgba(34,197,94,.12);border:2px solid #22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 0 8px rgba(34,197,94,.3)">${icons[z.type] || '📍'}</div>`
     });
     const m = L.marker([z.lat, z.lng], { icon }).bindPopup(
@@ -221,13 +343,14 @@ function renderSafeZones() {
 
 function renderCrimeZones() {
   crimeCircles.forEach(c => map.removeLayer(c)); crimeCircles = [];
-  if (!layerState.crime) return;
+  if (!layerState.crime || isHeatmapActive) return;
+  if (safetyData._showDemoOverlay === false) return; // demo data not relevant to current map area
   const cols = { high: '#ef4444', medium: '#f59e0b', low: '#fcd34d' };
   safetyData.crimeZones.forEach(z => {
     const c = L.circle([z.lat, z.lng], {
       radius: z.radius, color: cols[z.severity], fillColor: cols[z.severity],
       fillOpacity: isNightMode ? .28 : .12, weight: 1.5, dashArray: '4 3'
-    }).bindPopup(`<div class="popup-title">⚠️ Crime Zone — ${z.severity.toUpperCase()}</div><div class="popup-body">${z.description}</div><span class="popup-tag danger">Caution</span>`);
+    }).bindPopup(`<div class="popup-title">⚠️ Crime Zone — ${z.severity.toUpperCase()} (demo data)</div><div class="popup-body">${z.description}</div><span class="popup-tag danger">Caution</span>`);
     c.addTo(map); crimeCircles.push(c);
   });
 }
@@ -235,21 +358,23 @@ function renderCrimeZones() {
 function renderLightingZones() {
   lightingCircles.forEach(c => map.removeLayer(c)); lightingCircles = [];
   if (!layerState.lighting) return;
+  if (safetyData._showDemoOverlay === false) return; // demo data not relevant to current map area
   safetyData.lightingZones.forEach(z => {
     const c = L.circle([z.lat, z.lng], {
       radius: z.radius, color: '#fbbf24', fillColor: '#fbbf24',
       fillOpacity: isNightMode ? .32 : .1, weight: 1, dashArray: '3 4'
-    }).bindPopup(`<div class="popup-title">💡 Poor Lighting</div><div class="popup-body">${z.description}</div><span class="popup-tag warn">Low Visibility</span>`);
+    }).bindPopup(`<div class="popup-title">💡 Poor Lighting (demo data)</div><div class="popup-body">${z.description}</div><span class="popup-tag warn">Low Visibility</span>`);
     c.addTo(map); lightingCircles.push(c);
   });
 }
 
 function renderReportMarkers() {
   reportMarkers.forEach(m => map.removeLayer(m)); reportMarkers = [];
-  if (!layerState.reports) return;
+  if (!layerState.reports || isHeatmapActive) return;
   communityReports.forEach(r => {
     if (!r.lat) return;
-    const icon = L.divIcon({ className: '', iconAnchor: [14, 14],
+    const icon = L.divIcon({
+      className: '', iconAnchor: [14, 14],
       html: `<div style="width:28px;height:28px;background:rgba(124,58,237,.18);border:2px solid #a78bfa;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 0 8px rgba(124,58,237,.3)">${INCIDENT_ICONS[r.type] || '📍'}</div>`
     });
     const m = L.marker([r.lat, r.lng], { icon }).bindPopup(
@@ -273,6 +398,10 @@ async function findRoutes() {
     const [oC, dC] = await Promise.all([geocode(orig), geocode(dest)]);
     if (!oC) { showToast(`❌ Could not find: "${orig}". Try adding city name.`); return; }
     if (!dC) { showToast(`❌ Could not find: "${dest}". Try adding city name.`); return; }
+
+    // Fetch safe zones around origin coordinate dynamically from OSM
+    await fetchOSMSafeZones(oC.lat, oC.lon);
+
     showToast('🗺️ Calculating safe routes…');
     const rd = await fetchOSRM(oC, dC);
     if (!rd) { showToast('❌ Route not found. Try different locations.'); return; }
@@ -305,25 +434,26 @@ function drawLiveRoutes(oC, dC, rd) {
   rd.allRoutes.forEach((r, i) => {
     const coords = r.geometry.coordinates.map(c => [c[1], c[0]]);
     const dist = r.distance >= 1000 ? (r.distance / 1000).toFixed(1) + ' km' : Math.round(r.distance) + ' m';
-    const dur  = r.legs[0].duration >= 3600
+    const dur = r.legs[0].duration >= 3600
       ? Math.floor(r.legs[0].duration / 3600) + 'h ' + Math.floor((r.legs[0].duration % 3600) / 60) + ' min'
       : Math.ceil(r.legs[0].duration / 60) + ' min';
-    const score = [84, 61, 38][i] ?? 50;
-    const color = score >= 70 ? '#22c55e' : score >= 45 ? '#f59e0b' : '#ef4444';
-    const names = ['Safest Route', 'Alternate Route', 'Fastest (Caution)'];
-    const lightings = ['Good', 'Moderate', 'Poor'];
-    const crowds = ['High', 'Medium', 'Low'];
-    const crimes = ['Low', 'Medium', 'High'];
-    variants.push({ coords, score, color, name: names[i] || 'Route ' + (i + 1), dist, dur, id: 'lr' + i,
-      lighting: lightings[i] || 'Moderate', crowd: crowds[i] || 'Medium', crime: crimes[i] || 'Medium' });
+    variants.push({ coords, name: ['Safest Route', 'Alternate Route', 'Fastest (Caution)'][i] || 'Route ' + (i + 1), dist, dur, id: 'lr' + i });
   });
   if (variants.length === 1) {
     const b = variants[0]; const mid = Math.floor(b.coords.length / 2);
-    variants.push({ ...b, coords: b.coords.slice(0, mid).concat([[dC.lat, dC.lon]]),
-      score: 61, color: '#f59e0b', name: 'Alternate Route', id: 'lr1', lighting: 'Moderate', crowd: 'Medium', crime: 'Medium' });
-    variants.push({ ...b, coords: [b.coords[0], b.coords[Math.floor(mid / 2)], [dC.lat, dC.lon]],
-      score: 38, color: '#ef4444', name: 'Fastest (Caution)', id: 'lr2', lighting: 'Poor', crowd: 'Low', crime: 'High' });
+    variants.push({ ...b, coords: b.coords.slice(0, mid).concat([[dC.lat, dC.lon]]), name: 'Alternate Route', id: 'lr1' });
+    variants.push({ ...b, coords: [b.coords[0], b.coords[Math.floor(mid / 2)], [dC.lat, dC.lon]], name: 'Fastest (Caution)', id: 'lr2' });
   }
+  // Calculate dynamic safety scores using our real safety score algorithm
+  variants.forEach((v, index) => {
+    const safetyCalc = calculateRouteSafety(v.coords, index);
+    v.score = safetyCalc.score;
+    v.color = safetyCalc.color;
+    v.lighting = safetyCalc.lighting;
+    v.crowd = safetyCalc.crowd;
+    v.crime = safetyCalc.crime;
+    v.highlights = safetyCalc.highlights;
+  });
   currentRouteData = variants;
   variants.forEach((v, i) => {
     const poly = L.polyline(v.coords, {
@@ -332,14 +462,15 @@ function drawLiveRoutes(oC, dC, rd) {
     }).bindPopup(`<div class="popup-title">${v.name}</div>
       <div class="popup-body">Score: <strong style="color:${v.color}">${v.score}/100</strong><br>${v.dist} · ${v.dur}</div>
       <span class="popup-tag ${getScoreClass(v.score)}">${getScoreLabel(v.score)}</span>`)
-    .on('click', () => highlightLive(v.id, variants));
+      .on('click', () => highlightLive(v.id, variants));
     poly._liveId = v.id; poly.addTo(map); liveRouteLayers.push(poly);
   });
   [
     [oC, '📍', '#22c55e', oC.display_name?.split(',').slice(0, 2).join(',') || 'Origin'],
     [dC, '🏁', '#a78bfa', dC.display_name?.split(',').slice(0, 2).join(',') || 'Destination']
   ].forEach(([c, e, col, lbl]) => {
-    const icon = L.divIcon({ className: '', iconAnchor: [17, 17],
+    const icon = L.divIcon({
+      className: '', iconAnchor: [17, 17],
       html: `<div style="width:34px;height:34px;background:rgba(8,6,18,.92);border:2px solid ${col};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 0 12px ${col}55">${e}</div>`
     });
     const m = L.marker([c.lat, c.lon], { icon }).bindPopup(`<div class="popup-title">${lbl}</div>`);
@@ -391,6 +522,11 @@ function openLiveModal(id) {
   const v = currentRouteData.find(r => r.id === id); if (!v) return;
   const cls = getScoreClass(v.score);
   const colors = { safe: '#22c55e', warn: '#f59e0b', danger: '#ef4444' };
+
+  const coords = v.coords;
+  const destLat = coords[coords.length - 1][0];
+  const destLng = coords[coords.length - 1][1];
+
   document.getElementById('routeModalContent').innerHTML = `
     <div class="rm-name">${v.name}</div>
     <div class="rm-score" style="color:${colors[cls]}">${v.score}<span style="font-size:1rem;color:var(--text3)">/100</span></div>
@@ -399,14 +535,21 @@ function openLiveModal(id) {
       <div class="rm-stat"><div class="rm-stat-l">Duration</div><div class="rm-stat-v">⏱ ${v.dur}</div></div>
       <div class="rm-stat"><div class="rm-stat-l">Lighting</div><div class="rm-stat-v">💡 ${v.lighting}</div></div>
       <div class="rm-stat"><div class="rm-stat-l">Crowd</div><div class="rm-stat-v">👥 ${v.crowd}</div></div>
-      <div class="rm-stat"><div class="rm-stat-l">Crime Level</div><div class="rm-stat-v" style="color:${v.crime==='High'?'#ef4444':v.crime==='Medium'?'#f59e0b':'#22c55e'}">${v.crime}</div></div>
+      <div class="rm-stat"><div class="rm-stat-l">Crime Level</div><div class="rm-stat-v" style="color:${v.crime === 'High' ? '#ef4444' : v.crime === 'Medium' ? '#f59e0b' : '#22c55e'}">${v.crime}</div></div>
       <div class="rm-stat"><div class="rm-stat-l">Rating</div><div class="rm-stat-v" style="color:${colors[cls]}">${getScoreLabel(v.score)}</div></div>
     </div>
     <div class="rm-hl-title">Score Factors</div>
     <div class="rm-hl">
-      <div class="rm-hl-item">Lighting: ${v.lighting} ${v.lighting==='Good'?'(+20 pts)':v.lighting==='Moderate'?'(+8 pts)':'(-15 pts)'}</div>
-      <div class="rm-hl-item">Crowd: ${v.crowd} ${v.crowd==='High'?'(+18 pts)':v.crowd==='Medium'?'(+5 pts)':'(-10 pts)'}</div>
-      <div class="rm-hl-item">Crime: ${v.crime} ${v.crime==='Low'?'(+15 pts)':v.crime==='Medium'?'(-5 pts)':'(-20 pts)'}</div>
+      <div class="rm-hl-item">Lighting: ${v.lighting} ${v.lighting === 'Good' ? '(+20 pts)' : v.lighting === 'Moderate' ? '(+8 pts)' : '(-15 pts)'}</div>
+      <div class="rm-hl-item">Crowd: ${v.crowd} ${v.crowd === 'High' ? '(+18 pts)' : v.crowd === 'Medium' ? '(+5 pts)' : '(-10 pts)'}</div>
+      <div class="rm-hl-item">Crime: ${v.crime} ${v.crime === 'Low' ? '(+15 pts)' : v.crime === 'Medium' ? '(-5 pts)' : '(-20 pts)'}</div>
+    </div>
+    <div style="margin-top: 14px; display: flex; gap: 8px;">
+      <button class="save-btn green" onclick="closeModal('routeModal'); previewRoute('${v.id}');" style="flex: 1; min-height: 36px;">▶ Preview Route</button>
+    </div>
+    <div class="rm-cab-row">
+      <a href="#" class="cab-btn uber" onclick="bookCab('uber', ${destLat}, ${destLng}, '${v.name.replace(/'/g, "\\'")}')">🚗 Book Uber</a>
+      <a href="#" class="cab-btn ola" onclick="bookCab('ola', ${destLat}, ${destLng}, '${v.name.replace(/'/g, "\\'")}')">🚖 Book Ola</a>
     </div>`;
   openModal('routeModal');
 }
@@ -454,6 +597,11 @@ function openDemoModal(id) {
   const r = safetyData.routes.find(x => x.id === id); if (!r) return;
   const cls = getScoreClass(r.safetyScore);
   const colors = { safe: '#22c55e', warn: '#f59e0b', danger: '#ef4444' };
+
+  const waypoints = r.waypoints;
+  const destLat = waypoints[waypoints.length - 1][0];
+  const destLng = waypoints[waypoints.length - 1][1];
+
   document.getElementById('routeModalContent').innerHTML = `
     <div class="rm-name">${r.name}</div>
     <div class="rm-score" style="color:${colors[cls]}">${r.safetyScore}<span style="font-size:1rem;color:var(--text3)">/100</span></div>
@@ -462,10 +610,17 @@ function openDemoModal(id) {
       <div class="rm-stat"><div class="rm-stat-l">Duration</div><div class="rm-stat-v">⏱ ${r.duration}</div></div>
       <div class="rm-stat"><div class="rm-stat-l">Lighting</div><div class="rm-stat-v">💡 ${r.lighting}</div></div>
       <div class="rm-stat"><div class="rm-stat-l">Crowd</div><div class="rm-stat-v">👥 ${r.crowdDensity}</div></div>
-      <div class="rm-stat"><div class="rm-stat-l">Crime Level</div><div class="rm-stat-v" style="color:${r.crimeLevel==='High'?'#ef4444':r.crimeLevel==='Medium'?'#f59e0b':'#22c55e'}">${r.crimeLevel}</div></div>
+      <div class="rm-stat"><div class="rm-stat-l">Crime Level</div><div class="rm-stat-v" style="color:${r.crimeLevel === 'High' ? '#ef4444' : r.crimeLevel === 'Medium' ? '#f59e0b' : '#22c55e'}">${r.crimeLevel}</div></div>
     </div>
     <div class="rm-hl-title">Highlights</div>
-    <div class="rm-hl">${r.highlights.map(h => `<div class="rm-hl-item">${h}</div>`).join('')}</div>`;
+    <div class="rm-hl">${r.highlights.map(h => `<div class="rm-hl-item">${h}</div>`).join('')}</div>
+    <div style="margin-top: 14px; display: flex; gap: 8px;">
+      <button class="save-btn green" onclick="closeModal('routeModal'); previewRoute('${r.id}');" style="flex: 1; min-height: 36px;">▶ Preview Route</button>
+    </div>
+    <div class="rm-cab-row">
+      <a href="#" class="cab-btn uber" onclick="bookCab('uber', ${destLat}, ${destLng}, '${r.name.replace(/'/g, "\\'")}')">🚗 Book Uber</a>
+      <a href="#" class="cab-btn ola" onclick="bookCab('ola', ${destLat}, ${destLng}, '${r.name.replace(/'/g, "\\'")}')">🚖 Book Ola</a>
+    </div>`;
   openModal('routeModal');
 }
 
@@ -504,11 +659,11 @@ function openScoreExplainer() {
   const c = score >= 75 ? 'var(--safe)' : score >= 50 ? 'var(--warn)' : 'var(--danger)';
   const rows = [
     { l: '💡 Street Lighting', v: score >= 75 ? '+20' : score >= 50 ? '+8' : '-15', c: score >= 75 ? 'var(--safe)' : score >= 50 ? 'var(--warn)' : 'var(--danger)' },
-    { l: '👥 Crowd Density',   v: score >= 75 ? '+18' : score >= 50 ? '+5' : '-10', c: score >= 75 ? 'var(--safe)' : 'var(--danger)' },
-    { l: '🚨 Crime Reports',   v: score >= 75 ? '+15' : score >= 50 ? '-5' : '-20', c: score >= 75 ? 'var(--safe)' : 'var(--danger)' },
-    { l: '🚉 Transit Access',  v: '+12', c: 'var(--safe)' },
-    { l: '📷 CCTV Coverage',   v: score >= 75 ? '+10' : '+5', c: 'var(--safe)' },
-    { l: '⏰ Time of Day',     v: isNightMode ? '-8' : '+5', c: isNightMode ? 'var(--danger)' : 'var(--safe)' },
+    { l: '👥 Crowd Density', v: score >= 75 ? '+18' : score >= 50 ? '+5' : '-10', c: score >= 75 ? 'var(--safe)' : 'var(--danger)' },
+    { l: '🚨 Crime Reports', v: score >= 75 ? '+15' : score >= 50 ? '-5' : '-20', c: score >= 75 ? 'var(--safe)' : 'var(--danger)' },
+    { l: '🚉 Transit Access', v: '+12', c: 'var(--safe)' },
+    { l: '📷 CCTV Coverage', v: score >= 75 ? '+10' : '+5', c: 'var(--safe)' },
+    { l: '⏰ Time of Day', v: isNightMode ? '-8' : '+5', c: isNightMode ? 'var(--danger)' : 'var(--safe)' },
   ];
   document.getElementById('scoreBreakdownContent').innerHTML = `
     <div class="score-bdown">
@@ -548,7 +703,7 @@ function findNearby() {
 function goToSpot(lat, lng) { map.setView([lat, lng], 16); }
 function haversine(la1, lo1, la2, lo2) {
   const R = 6371, dLa = (la2 - la1) * Math.PI / 180, dLo = (lo2 - lo1) * Math.PI / 180;
-  const a = Math.sin(dLa/2)**2 + Math.cos(la1*Math.PI/180) * Math.cos(la2*Math.PI/180) * Math.sin(dLo/2)**2;
+  const a = Math.sin(dLa / 2) ** 2 + Math.cos(la1 * Math.PI / 180) * Math.cos(la2 * Math.PI / 180) * Math.sin(dLo / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -571,7 +726,7 @@ function updateSWDisp() {
   const txt = `${m}:${s.toString().padStart(2, '0')}`;
   const col = swSecondsLeft <= 60 ? 'var(--danger)' : 'var(--safe)';
   // Update desktop header + mobile drawer
-  ['swCountdown','mobSwCountdown'].forEach(id => {
+  ['swCountdown', 'mobSwCountdown'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.textContent = txt; el.style.color = col; }
   });
@@ -579,9 +734,9 @@ function updateSWDisp() {
 function markSafe() {
   clearInterval(swTimer);
   const active = document.getElementById('swActive');
-  const idle   = document.getElementById('swIdle');
+  const idle = document.getElementById('swIdle');
   if (active) active.style.display = 'none';
-  if (idle)   idle.style.display   = 'block';
+  if (idle) idle.style.display = 'block';
   const mobActive = document.getElementById('mobSwActive');
   if (mobActive) mobActive.style.display = 'none';
   showToast("✅ Glad you're safe! Timer stopped.");
@@ -619,24 +774,51 @@ function handleMapPin(latlng) {
   switchTab('report', document.querySelector('.nav-btn[data-tab="report"]'));
   showToast('📍 Location pinned! Fill in the report.'); window._pLat = latlng.lat; window._pLng = latlng.lng;
 }
-function submitReport() {
+async function submitReport() {
   const loc = document.getElementById('reportLocation').value.trim();
   if (!loc) { showToast('⚠️ Please enter a location'); return; }
-  const r = { id: 'r' + Date.now(), type: selectedIncType, location: loc,
+
+  let lat = window._pLat;
+  let lng = window._pLng;
+
+  // Geocode location string using Nominatim if coordinates aren't explicitly pinned
+  if (!lat || !lng) {
+    showToast('🔍 Locating report address…');
+    const geo = await geocode(loc);
+    if (geo) {
+      lat = geo.lat;
+      lng = geo.lon;
+    }
+  }
+
+  const r = {
+    id: 'r' + Date.now(),
+    type: selectedIncType,
+    location: loc,
     severity: document.querySelector('input[name="sev"]:checked')?.value || 'medium',
     desc: document.getElementById('reportDesc').value.trim(),
     time: document.getElementById('reportTime').value,
     anon: document.getElementById('reportAnon').checked,
-    lat: window._pLat || null, lng: window._pLng || null, ts: new Date().toISOString() };
-  communityReports.unshift(r);
-  localStorage.setItem('sf_reports', JSON.stringify(communityReports.slice(0, 50)));
-  window._pLat = null; window._pLng = null;
-  renderCommunityReportsFeed(); renderReportMarkers();
-  document.getElementById('reportLocation').value = ''; document.getElementById('reportDesc').value = '';
+    lat: lat || null,
+    lng: lng || null,
+    ts: new Date().toISOString()
+  };
+
+  await dbAddReport(r);
+
+  window._pLat = null;
+  window._pLng = null;
+
+  document.getElementById('reportLocation').value = '';
+  document.getElementById('reportDesc').value = '';
   document.querySelectorAll('.inc-btn').forEach(b => b.classList.remove('active'));
-  document.querySelector('.inc-btn[data-type="harassment"]')?.classList.add('active'); selectedIncType = 'harassment';
+  document.querySelector('.inc-btn[data-type="harassment"]')?.classList.add('active');
+  selectedIncType = 'harassment';
+
   showToast('✅ Report submitted! Thank you for keeping the community safe.');
-  const el = document.getElementById('statReports'); if (el) el.textContent = 24 + communityReports.length;
+
+  const el = document.getElementById('statReports');
+  if (el) el.textContent = 24 + communityReports.length;
 }
 function renderCommunityReportsFeed() {
   const feed = document.getElementById('reportsFeed'); if (!feed) return;
@@ -655,10 +837,10 @@ function renderCommunityReportsFeed() {
   });
 }
 const DEMO_REPORTS = () => [
-  { type: 'harassment',    location: 'Park Street, near metro exit',   severity: 'high',   desc: 'Followed by unknown individual at night', time: '2 hours ago' },
-  { type: 'poor_lighting', location: 'Sealdah underpass',              severity: 'medium', desc: 'Lights broken, very dark after 8pm',       time: 'Yesterday' },
-  { type: 'theft',         location: 'New Market area, near gate 3',   severity: 'medium', desc: 'Pickpocket incident reported',              time: '2 days ago' },
-  { type: 'suspicious',    location: 'Rabindra Sarani, near bus stop', severity: 'low',    desc: 'Group acting suspicious',                  time: '3 days ago' },
+  { type: 'harassment', location: 'Park Street, near metro exit', severity: 'high', desc: 'Followed by unknown individual at night', time: '2 hours ago' },
+  { type: 'poor_lighting', location: 'Sealdah underpass', severity: 'medium', desc: 'Lights broken, very dark after 8pm', time: 'Yesterday' },
+  { type: 'theft', location: 'New Market area, near gate 3', severity: 'medium', desc: 'Pickpocket incident reported', time: '2 days ago' },
+  { type: 'suspicious', location: 'Rabindra Sarani, near bus stop', severity: 'low', desc: 'Group acting suspicious', time: '3 days ago' },
 ];
 
 
@@ -668,7 +850,7 @@ const DEMO_REPORTS = () => [
 function renderAnalytics() { renderHourChart(); renderIncChart(); renderTrendChart(); }
 function renderHourChart() {
   const c = document.getElementById('hourChart'); if (!c) return;
-  const data = [8,12,6,3,2,1,2,4,3,5,6,7,5,4,5,8,10,14,16,12,9,10,11,9];
+  const data = [8, 12, 6, 3, 2, 1, 2, 4, 3, 5, 6, 7, 5, 4, 5, 8, 10, 14, 16, 12, 9, 10, 11, 9];
   const max = Math.max(...data); c.innerHTML = '';
   data.forEach(v => {
     const b = document.createElement('div'); b.className = 'hour-bar';
@@ -689,7 +871,7 @@ function renderIncChart() {
 }
 function renderTrendChart() {
   const c = document.getElementById('trendChart'), labels = document.getElementById('trendLabels'); if (!c) return;
-  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'], incidents = [12,9,15,8,18,22,7];
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], incidents = [12, 9, 15, 8, 18, 22, 7];
   const max = Math.max(...incidents); c.innerHTML = ''; if (labels) labels.innerHTML = '';
   incidents.forEach((v, i) => {
     const b = document.createElement('div'); b.className = 't-bar' + (v === Math.min(...incidents) ? ' best' : '');
@@ -729,7 +911,7 @@ function quickPrompt(t) {
 }
 
 async function sendAIMessage() {
-  const inp  = document.getElementById('aiInput');
+  const inp = document.getElementById('aiInput');
   const text = inp.value.trim();
   if (!text) return;
   inp.value = '';
@@ -986,7 +1168,7 @@ function locateMe() {
 ────────────────────────────────────────────── */
 
 // renderMobileSafeWalk — no-op, handled by drawer
-function renderMobileSafeWalk() {}
+function renderMobileSafeWalk() { }
 
 // Render sidebar emergency contacts with real call links
 function renderEmergencyContacts() {
@@ -1031,7 +1213,7 @@ function triggerSOS() {
 
 // Build all real-contact links once we have (or don't have) coordinates
 function buildSOSLinks(lat, lng, locText) {
-  const now  = new Date().toLocaleTimeString();
+  const now = new Date().toLocaleTimeString();
   const mapsUrl = lat
     ? `https://maps.google.com/?q=${lat},${lng}`
     : 'https://maps.google.com/';
@@ -1041,54 +1223,61 @@ function buildSOSLinks(lat, lng, locText) {
   if (mapsLink) { mapsLink.href = mapsUrl; mapsLink.textContent = lat ? `${lat}, ${lng}` : 'Open Maps'; }
 
   // SOS message text
-  const sosMsg = trustedContact
-    ? `🆘 EMERGENCY — I need help! I am ${trustedContact.name}'s contact.\nMy location: ${locText}\nTime: ${now}\nGoogle Maps: ${mapsUrl}\n\nPlease contact emergency services: 100 (Police), 1091 (Women Helpline), 102 (Ambulance)`
-    : `🆘 EMERGENCY — I need help!\nMy location: ${locText}\nTime: ${now}\nGoogle Maps: ${mapsUrl}\n\nPlease contact: 100 (Police), 1091 (Women Helpline), 102 (Ambulance)`;
+  const baseSosMsg = `🆘 EMERGENCY — I need help!\nLocation: ${locText}\nTime: ${now}\nGoogle Maps: ${mapsUrl}\n\nPlease contact emergency services: 100 (Police), 1091 (Women Helpline), 102 (Ambulance)`;
 
-  // WhatsApp share (works without saving contact — opens wa.me link)
-  const waText = encodeURIComponent(sosMsg);
+  // WhatsApp share
+  const waText = encodeURIComponent(baseSosMsg);
   const waShare = document.getElementById('sosWhatsAppShare');
   if (waShare) waShare.href = `https://wa.me/?text=${waText}`;
 
-  // SMS share (pre-fills default SMS app with message)
+  // SMS share
   const smsShare = document.getElementById('sosSMSShare');
   if (smsShare) smsShare.href = `sms:?body=${waText}`;
 
-  // Trusted contact section
+  // Trusted contacts section
   const tcDiv = document.getElementById('sosTrustedActions');
   if (!tcDiv) return;
   tcDiv.innerHTML = '';
 
-  if (!trustedContact) {
+  if (trustedContacts.length === 0) {
     tcDiv.innerHTML = `
       <div class="sos-trusted-no-contact">
-        No trusted contact saved yet.<br>
-        <strong>Go to Emergency tab → save a contact</strong><br>
+        No trusted contacts saved yet.<br>
+        <strong>Go to Emergency tab → add contacts</strong><br>
         to enable WhatsApp/SMS/Call alerts.
       </div>`;
     return;
   }
 
-  // Clean phone: remove spaces/dashes, add + if missing country code
-  const rawPhone = trustedContact.phone.replace(/[\s\-().]/g, '');
-  const e164     = rawPhone.startsWith('+') ? rawPhone : `+91${rawPhone}`; // default India code
-  const tcMsg    = encodeURIComponent(
-    `🆘 EMERGENCY from ${trustedContact.name}!\nI need help — please call me or contact emergency services.\nMy location: ${locText}\nTime: ${now}\nMaps: ${mapsUrl}`
-  );
+  trustedContacts.forEach(c => {
+    const rawPhone = c.phone.replace(/[\s\-().]/g, '');
+    const e164 = rawPhone.startsWith('+') ? rawPhone : `+91${rawPhone}`;
+    const tcMsg = encodeURIComponent(
+      `🆘 EMERGENCY from SoloForce user!\nI need help — please call me or contact emergency services.\nMy location: ${locText}\nTime: ${now}\nMaps: ${mapsUrl}`
+    );
 
-  tcDiv.innerHTML = `
-    <a href="https://wa.me/${e164.replace('+','')}?text=${tcMsg}" target="_blank" class="sos-tc-btn wa" onclick="showToast('💬 Opening WhatsApp…')">
-      <span class="sos-tc-btn-icon">💬</span>
-      <span class="sos-tc-btn-body"><strong>WhatsApp ${trustedContact.name}</strong><small>Sends location + SOS message</small></span>
-    </a>
-    <a href="tel:${rawPhone}" class="sos-tc-btn call" onclick="showToast('📞 Calling ${trustedContact.name}…')">
-      <span class="sos-tc-btn-icon">📞</span>
-      <span class="sos-tc-btn-body"><strong>Call ${trustedContact.name}</strong><small>Direct phone call</small></span>
-    </a>
-    <a href="sms:${rawPhone}?body=${tcMsg}" class="sos-tc-btn sms" onclick="showToast('✉️ Opening SMS…')">
-      <span class="sos-tc-btn-icon">✉️</span>
-      <span class="sos-tc-btn-body"><strong>SMS ${trustedContact.name}</strong><small>Pre-filled emergency message</small></span>
-    </a>`;
+    const contactRow = document.createElement('div');
+    contactRow.className = 'sos-contact-action-row';
+    contactRow.style.cssText = "display:flex; flex-direction:column; gap:6px; margin-bottom:12px; border:1px solid var(--border); border-radius:var(--r); padding:10px; background:var(--surface);";
+    contactRow.innerHTML = `
+      <div style="font-weight:700; font-size:0.85rem; color:var(--text); margin-bottom:4px;">👤 ${c.name} (${c.phone})</div>
+      <div style="display:flex; gap:6px;">
+        <a href="https://wa.me/${e164.replace('+', '')}?text=${tcMsg}" target="_blank" class="sos-tc-btn wa" style="flex:1;" onclick="showToast('💬 Opening WhatsApp…')">
+          <span class="sos-tc-btn-icon">💬</span>
+          <span class="sos-tc-btn-body"><strong>WhatsApp</strong></span>
+        </a>
+        <a href="tel:${rawPhone}" class="sos-tc-btn call" style="flex:1;" onclick="showToast('📞 Calling…')">
+          <span class="sos-tc-btn-icon">📞</span>
+          <span class="sos-tc-btn-body"><strong>Call</strong></span>
+        </a>
+        <a href="sms:${rawPhone}?body=${tcMsg}" class="sos-tc-btn sms" style="flex:1;" onclick="showToast('✉️ Opening SMS…')">
+          <span class="sos-tc-btn-icon">✉️</span>
+          <span class="sos-tc-btn-body"><strong>SMS</strong></span>
+        </a>
+      </div>
+    `;
+    tcDiv.appendChild(contactRow);
+  });
 }
 
 // Log which service was contacted
@@ -1098,9 +1287,9 @@ function logSOSAction(service) {
 
 // Copy full SOS message to clipboard
 function copyEmergencyMsg() {
-  const loc  = document.getElementById('sosLocation')?.textContent || 'unknown';
+  const loc = document.getElementById('sosLocation')?.textContent || 'unknown';
   const time = document.getElementById('sosTime')?.textContent || new Date().toLocaleTimeString();
-  const msg  = `🆘 EMERGENCY — I need help!\nLocation: ${loc}\nTime: ${time}\nPlease contact emergency services immediately:\n📞 Police: 100\n📞 Women Helpline: 1091\n📞 Ambulance: 102`;
+  const msg = `🆘 EMERGENCY — I need help!\nLocation: ${loc}\nTime: ${time}\nPlease contact emergency services immediately:\n📞 Police: 100\n📞 Women Helpline: 1091\n📞 Ambulance: 102`;
   if (navigator.clipboard) {
     navigator.clipboard.writeText(msg).then(() => showToast('📋 SOS message copied! Paste it anywhere.'));
   } else {
@@ -1110,45 +1299,6 @@ function copyEmergencyMsg() {
     document.execCommand('copy'); document.body.removeChild(ta);
     showToast('📋 SOS message copied!');
   }
-}
-
-function saveTrustedContact() {
-  const n = document.getElementById('trustedName').value.trim();
-  const p = document.getElementById('trustedPhone').value.trim();
-  if (!n) { showToast('⚠️ Enter a contact name'); return; }
-  if (!p) { showToast('⚠️ Enter a phone number'); return; }
-  if (!/[0-9+]/.test(p)) { showToast('⚠️ Enter a valid phone number'); return; }
-  trustedContact = { name: n, phone: p };
-  localStorage.setItem('sf_trusted', JSON.stringify(trustedContact));
-  renderSavedContact();
-  updateTrustedQuickActions();
-  showToast(`✅ ${n} saved! They'll receive WhatsApp/SMS/call alerts in an emergency.`);
-}
-
-function renderSavedContact() {
-  const el = document.getElementById('savedContact');
-  if (el && trustedContact) {
-    el.innerHTML = `✅ <strong>${trustedContact.name}</strong> — ${trustedContact.phone}`;
-  }
-}
-
-// Update quick-action links in sidebar after saving contact
-function updateTrustedQuickActions() {
-  if (!trustedContact) return;
-  const wrap = document.getElementById('trustedQuickActions');
-  if (!wrap) return;
-  wrap.style.display = 'flex';
-
-  const raw  = trustedContact.phone.replace(/[\s\-().]/g, '');
-  const e164 = raw.startsWith('+') ? raw : `+91${raw}`;
-  const msg  = encodeURIComponent(`🆘 SOS from ${trustedContact.name}! I need help. Please check on me or call emergency services.`);
-
-  const wa   = document.getElementById('tcWhatsApp');
-  const call = document.getElementById('tcCall');
-  const sms  = document.getElementById('tcSMS');
-  if (wa)   wa.href   = `https://wa.me/${e164.replace('+','')}?text=${msg}`;
-  if (call) call.href = `tel:${raw}`;
-  if (sms)  sms.href  = `sms:${raw}?body=${msg}`;
 }
 
 
@@ -1193,7 +1343,7 @@ function switchMobDrawer(panel, btn) {
   document.getElementById('mdp-' + panel)?.classList.add('active');
   if (btn) btn.classList.add('active');
   else {
-    const idx = ['routes','safety','emergency'].indexOf(panel);
+    const idx = ['routes', 'safety', 'emergency'].indexOf(panel);
     document.querySelectorAll('.mob-dtab')[idx]?.classList.add('active');
   }
 }
@@ -1226,7 +1376,7 @@ function findRoutesMob() {
   const o = document.getElementById('mobOrigin')?.value.trim();
   const d = document.getElementById('mobDest')?.value.trim();
   if (o) { const el = document.getElementById('originInput'); if (el) el.value = o; }
-  if (d) { const el = document.getElementById('destInput');   if (el) el.value = d; }
+  if (d) { const el = document.getElementById('destInput'); if (el) el.value = d; }
   // Blur inputs to dismiss keyboard
   document.getElementById('mobOrigin')?.blur();
   document.getElementById('mobDest')?.blur();
@@ -1257,7 +1407,7 @@ function mobRunAC(q, inputId, dropId, syncId) {
         drop.appendChild(div);
       });
       drop.classList.add('open');
-    } catch {}
+    } catch { }
   }, 350);
 }
 
@@ -1269,22 +1419,22 @@ function renderMobRouteCards(routes) {
   c.innerHTML = '';
   routes.forEach((r, i) => {
     const score = r.safetyScore ?? r.score ?? 50;
-    const cls   = getScoreClass(score);
-    const cols  = { safe: '#22c55e', warn: '#f59e0b', danger: '#ef4444' };
-    const card  = document.createElement('div');
+    const cls = getScoreClass(score);
+    const cols = { safe: '#22c55e', warn: '#f59e0b', danger: '#ef4444' };
+    const card = document.createElement('div');
     card.className = 'route-card ' + cls + '-c';
     card.innerHTML =
       '<div class="rc-top">' +
-        '<div class="rc-name">' + r.name + '</div>' +
-        '<div class="rc-score ' + cls + '">' + score + '</div>' +
+      '<div class="rc-name">' + r.name + '</div>' +
+      '<div class="rc-score ' + cls + '">' + score + '</div>' +
       '</div>' +
       '<div class="rc-meta">' +
-        '<span class="rc-mi">📏 ' + (r.distance || r.dist || '') + '</span>' +
-        '<span class="rc-mi">⏱ '  + (r.duration  || r.dur  || '') + '</span>' +
+      '<span class="rc-mi">📏 ' + (r.distance || r.dist || '') + '</span>' +
+      '<span class="rc-mi">⏱ ' + (r.duration || r.dur || '') + '</span>' +
       '</div>' +
       '<div class="rc-footer">' +
-        (i === 0 ? '<span class="best-badge">✓ Best</span>' : '<span></span>') +
-        '<span style="font-size:.68rem;color:' + cols[cls] + '">' + getScoreLabel(score) + '</span>' +
+      (i === 0 ? '<span class="best-badge">✓ Best</span>' : '<span></span>') +
+      '<span style="font-size:.68rem;color:' + cols[cls] + '">' + getScoreLabel(score) + '</span>' +
       '</div>';
     card.addEventListener('click', () => {
       document.querySelectorAll('.route-card').forEach(x => x.classList.remove('selected'));
@@ -1297,7 +1447,7 @@ function renderMobRouteCards(routes) {
       }
       const light = r.lighting || r.lighting || 'Moderate';
       const crowd = r.crowdDensity || r.crowd || 'Medium';
-      const crime = r.crimeLevel  || r.crime || 'Medium';
+      const crime = r.crimeLevel || r.crime || 'Medium';
       updateMobMeters(score, light, crowd, crime);
     });
     c.appendChild(card);
@@ -1317,7 +1467,7 @@ function updateMobMeters(score, lighting, crowd, crime) {
   setM('mob-lightFill', 'mob-lightVal', lv, 'good');
   setM('mob-crowdFill', 'mob-crowdVal', cv, 'medium');
   setM('mob-crimeFill', 'mob-crimeVal', rv, 'danger');
-  const sc  = document.getElementById('mob-overallScore'); if (sc) sc.textContent = score;
+  const sc = document.getElementById('mob-overallScore'); if (sc) sc.textContent = score;
   const arc = document.getElementById('mob-scoreArc');
   if (arc) { arc.style.strokeDashoffset = 201 - (score / 100) * 201; arc.style.stroke = score >= 75 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444'; }
   const sd = document.getElementById('mob-scoreDesc');
@@ -1338,31 +1488,11 @@ function renderMobEmergencyContacts() {
 }
 
 /* ── Mobile trusted contact ── */
-function saveTrustedContactMob() {
-  const n = document.getElementById('trustedNameMob')?.value.trim();
-  const p = document.getElementById('trustedPhoneMob')?.value.trim();
-  const nd = document.getElementById('trustedName');  if (nd) nd.value = n || '';
-  const pd = document.getElementById('trustedPhone'); if (pd) pd.value = p || '';
-  saveTrustedContact();
-  const sd = document.getElementById('savedContactMob');
-  if (sd && trustedContact) sd.innerHTML = '✅ <strong>' + trustedContact.name + '</strong> — ' + trustedContact.phone;
-  updateMobTrustedActions();
-}
-function updateMobTrustedActions() {
-  if (!trustedContact) return;
-  const wrap = document.getElementById('trustedQuickMob'); if (!wrap) return;
-  wrap.style.display = 'flex';
-  const raw  = trustedContact.phone.replace(/[^0-9+]/g, '');
-  const e164 = raw.startsWith('+') ? raw : '+91' + raw;
-  const msg  = encodeURIComponent('🆘 SOS from ' + trustedContact.name + '! I need help. Please check on me or call emergency services.');
-  wrap.innerHTML =
-    '<a href="https://wa.me/' + e164.replace('+','') + '?text=' + msg + '" target="_blank" class="tc-action-btn wa">💬 WhatsApp Alert</a>' +
-    '<a href="tel:' + raw + '" class="tc-action-btn call">📞 Call ' + trustedContact.name + '</a>';
-}
+// Refactored to handle multiple contacts list via renderTrustedContacts()
 
 /* ── Safe Walk: mobile version ── */
 function startSafeWalkMob() {
-  const mobSel  = document.getElementById('swMinutesMob');
+  const mobSel = document.getElementById('swMinutesMob');
   const deskSel = document.getElementById('swMinutes');
   if (mobSel && deskSel) deskSel.value = mobSel.value;
   const mobActive = document.getElementById('mobSwActive');
@@ -1394,7 +1524,7 @@ function setupMobileSwipeClose() {
 /* ──────────────────────────────────────────────
    MODAL HELPERS
 ────────────────────────────────────────────── */
-function openModal(id)  { document.getElementById(id)?.classList.add('open'); }
+function openModal(id) { document.getElementById(id)?.classList.add('open'); }
 function closeModal(id) { document.getElementById(id)?.classList.remove('open'); }
 
 
@@ -1422,37 +1552,915 @@ const getScoreLabel = s => s >= 70 ? 'Safe' : s >= 45 ? 'Moderate' : 'High Risk'
 ────────────────────────────────────────────── */
 function getFallbackData() {
   return {
+    demoRegionCenter: { lat: 22.562, lng: 88.358, city: 'Kolkata' },
     safeZones: [
-      { id:'sz1', name:'Park Street Metro',     lat:22.5513, lng:88.3512, type:'metro',   description:'Well-lit metro, high foot traffic' },
-      { id:'sz2', name:'Central Hospital',      lat:22.5726, lng:88.3639, type:'hospital',description:'24/7 emergency services' },
-      { id:'sz3', name:'New Market Police Post',lat:22.5643, lng:88.3505, type:'police',  description:'Active police presence' },
-      { id:'sz4', name:'Esplanade Metro',        lat:22.5598, lng:88.3514, type:'metro',   description:'Busy transit hub' },
-      { id:'sz5', name:'Sealdah Station',        lat:22.5652, lng:88.3700, type:'transit', description:'Patrolled railway station' },
+      { id: 'sz1', name: 'Park Street Metro', lat: 22.5513, lng: 88.3512, type: 'metro', description: 'Well-lit metro, high foot traffic' },
+      { id: 'sz2', name: 'Central Hospital', lat: 22.5726, lng: 88.3639, type: 'hospital', description: '24/7 emergency services' },
+      { id: 'sz3', name: 'New Market Police Post', lat: 22.5643, lng: 88.3505, type: 'police', description: 'Active police presence' },
+      { id: 'sz4', name: 'Esplanade Metro', lat: 22.5598, lng: 88.3514, type: 'metro', description: 'Busy transit hub' },
+      { id: 'sz5', name: 'Sealdah Station', lat: 22.5652, lng: 88.3700, type: 'transit', description: 'Patrolled railway station' },
     ],
     crimeZones: [
-      { id:'cz1', lat:22.5480, lng:88.3450, radius:300, severity:'high',   description:'Incidents reported after 9 PM' },
-      { id:'cz2', lat:22.5700, lng:88.3750, radius:250, severity:'medium', description:'Pickpocketing reported' },
-      { id:'cz3', lat:22.5550, lng:88.3680, radius:350, severity:'high',   description:'Poorly lit, avoid at night' },
+      { id: 'cz1', lat: 22.5480, lng: 88.3450, radius: 300, severity: 'high', description: 'Incidents reported after 9 PM' },
+      { id: 'cz2', lat: 22.5700, lng: 88.3750, radius: 250, severity: 'medium', description: 'Pickpocketing reported' },
+      { id: 'cz3', lat: 22.5550, lng: 88.3680, radius: 350, severity: 'high', description: 'Poorly lit, avoid at night' },
     ],
     lightingZones: [
-      { id:'lz1', lat:22.5530, lng:88.3490, radius:200, level:'poor', description:'Street lights non-functional' },
-      { id:'lz2', lat:22.5610, lng:88.3620, radius:150, level:'poor', description:'Under-lit alley' },
+      { id: 'lz1', lat: 22.5530, lng: 88.3490, radius: 200, level: 'poor', description: 'Street lights non-functional' },
+      { id: 'lz2', lat: 22.5610, lng: 88.3620, radius: 150, level: 'poor', description: 'Under-lit alley' },
     ],
     routes: [
-      { id:'route1', name:'Safe Route via Park Street', safetyScore:88, distance:'3.2 km', duration:'12 min', lighting:'Good',     crowdDensity:'High',   crimeLevel:'Low',
-        waypoints:[[22.5726,88.3639],[22.5650,88.3600],[22.5598,88.3514],[22.5513,88.3512]], color:'#22c55e',
-        highlights:['Well-lit main road','High footfall','CCTV covered','Near police post'] },
-      { id:'route2', name:'Moderate Route via Sealdah', safetyScore:62, distance:'2.8 km', duration:'10 min', lighting:'Moderate', crowdDensity:'Medium', crimeLevel:'Medium',
-        waypoints:[[22.5726,88.3639],[22.5690,88.3690],[22.5652,88.3700],[22.5600,88.3650],[22.5513,88.3512]], color:'#f59e0b',
-        highlights:['Passes through Sealdah','Some dark stretches','Moderate crowd'] },
-      { id:'route3', name:'Fast Route (Avoid at Night)', safetyScore:31, distance:'2.1 km', duration:'8 min',  lighting:'Poor',     crowdDensity:'Low',    crimeLevel:'High',
-        waypoints:[[22.5726,88.3639],[22.5640,88.3580],[22.5560,88.3530],[22.5513,88.3512]], color:'#ef4444',
-        highlights:['Poorly lit streets','Low foot traffic','Avoid after 8 PM'] },
+      {
+        id: 'route1', name: 'Safe Route via Park Street', safetyScore: 88, distance: '3.2 km', duration: '12 min', lighting: 'Good', crowdDensity: 'High', crimeLevel: 'Low',
+        waypoints: [[22.5726, 88.3639], [22.5650, 88.3600], [22.5598, 88.3514], [22.5513, 88.3512]], color: '#22c55e',
+        highlights: ['Well-lit main road', 'High footfall', 'CCTV covered', 'Near police post']
+      },
+      {
+        id: 'route2', name: 'Moderate Route via Sealdah', safetyScore: 62, distance: '2.8 km', duration: '10 min', lighting: 'Moderate', crowdDensity: 'Medium', crimeLevel: 'Medium',
+        waypoints: [[22.5726, 88.3639], [22.5690, 88.3690], [22.5652, 88.3700], [22.5600, 88.3650], [22.5513, 88.3512]], color: '#f59e0b',
+        highlights: ['Passes through Sealdah', 'Some dark stretches', 'Moderate crowd']
+      },
+      {
+        id: 'route3', name: 'Fast Route (Avoid at Night)', safetyScore: 31, distance: '2.1 km', duration: '8 min', lighting: 'Poor', crowdDensity: 'Low', crimeLevel: 'High',
+        waypoints: [[22.5726, 88.3639], [22.5640, 88.3580], [22.5560, 88.3530], [22.5513, 88.3512]], color: '#ef4444',
+        highlights: ['Poorly lit streets', 'Low foot traffic', 'Avoid after 8 PM']
+      },
     ],
     emergencyContacts: [
-      { name:'Women Helpline', number:'1091', icon:'🆘' },
-      { name:'Police',         number:'100',  icon:'🚔' },
-      { name:'Ambulance',      number:'102',  icon:'🚑' },
+      { name: 'Women Helpline', number: '1091', icon: '🆘' },
+      { name: 'Police', number: '100', icon: '🚔' },
+      { name: 'Ambulance', number: '102', icon: '🚑' },
     ]
   };
 }
+
+/* ──────────────────────────────────────────────
+   SOLOFORCE ENHANCEMENT FUNCTIONS
+   OSM Overpass, Live Tracking, Preview Animation,
+   Shake-to-SOS, Heatmap, Translations, Cabs, Multiple Contacts,
+   and Firebase Firestore syncing
+────────────────────────────────────────────── */
+
+function initFirebase() {
+  try {
+    if (typeof firebase !== 'undefined') {
+      firebase.initializeApp(firebaseConfig);
+      firebaseDb = firebase.firestore();
+      firebaseInitialized = true;
+      console.log("Firebase Firestore initialized successfully.");
+    } else {
+      console.warn("Firebase SDK not loaded. Using local storage.");
+    }
+  } catch (e) {
+    console.error("Firebase init failed, using local storage fallback: ", e);
+  }
+}
+
+async function dbAddReport(report) {
+  if (firebaseInitialized && firebaseDb) {
+    try {
+      await firebaseDb.collection('reports').add(report);
+      console.log("Report stored in Firestore.");
+    } catch (e) {
+      console.error("Firestore write failed, saving locally:", e);
+      saveLocalReport(report);
+    }
+  } else {
+    saveLocalReport(report);
+  }
+}
+
+function saveLocalReport(report) {
+  communityReports.unshift(report);
+  localStorage.setItem('sf_reports', JSON.stringify(communityReports.slice(0, 50)));
+}
+
+function dbListenReports(callback) {
+  if (firebaseInitialized && firebaseDb) {
+    try {
+      firebaseDb.collection('reports').orderBy('ts', 'desc').limit(50)
+        .onSnapshot(snapshot => {
+          let reports = [];
+          snapshot.forEach(doc => {
+            reports.push({ id: doc.id, ...doc.data() });
+          });
+          callback(reports);
+        }, error => {
+          console.error("Firestore listen failed, using local storage:", error);
+          callback(JSON.parse(localStorage.getItem('sf_reports') || '[]'));
+        });
+    } catch (e) {
+      console.error("Firestore sync setup failed:", e);
+      callback(JSON.parse(localStorage.getItem('sf_reports') || '[]'));
+    }
+  } else {
+    callback(JSON.parse(localStorage.getItem('sf_reports') || '[]'));
+  }
+}
+
+async function fetchOSMSafeZones(lat, lng) {
+  const query = `[out:json][timeout:25];
+(
+  node["amenity"="police"](around:3000, ${lat}, ${lng});
+  node["amenity"="hospital"](around:3000, ${lat}, ${lng});
+  node["railway"="station"](around:3000, ${lat}, ${lng});
+  node["subway"="yes"](around:3000, ${lat}, ${lng});
+  node["highway"="bus_stop"](around:3000, ${lat}, ${lng});
+);
+out body 15;`;
+
+  try {
+    const response = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: query
+    });
+    if (!response.ok) throw new Error('Overpass API error');
+    const data = await response.json();
+
+    const osmZones = data.elements.map((el, i) => {
+      const type = el.tags.amenity === 'police' ? 'police' :
+        el.tags.amenity === 'hospital' ? 'hospital' :
+          el.tags.railway === 'station' || el.tags.subway === 'yes' ? 'metro' : 'transit';
+      const defaultNames = { police: 'Police Post', hospital: 'Hospital/Clinic', metro: 'Transit Station', transit: 'Bus Stop' };
+      const name = el.tags.name || defaultNames[type] || 'Safe Facility';
+      return {
+        id: `sz_osm_${el.id || i}`,
+        name: name,
+        lat: el.lat,
+        lng: el.lon,
+        type: type,
+        description: el.tags.description || `Verified ${type} facility (via OpenStreetMap)`
+      };
+    });
+
+    if (osmZones.length > 0) {
+      const existingIds = new Set(safetyData.safeZones.map(z => z.id));
+      osmZones.forEach(z => {
+        if (!existingIds.has(z.id)) {
+          safetyData.safeZones.push(z);
+        }
+      });
+      renderSafeZones();
+      updateNearbySpotsList(lat, lng);
+    }
+  } catch (e) {
+    console.warn("Overpass API failed, using standard safety dataset:", e);
+  }
+}
+
+function updateNearbySpotsList(lat, lng) {
+  if (!safetyData) return;
+  const spots = safetyData.safeZones.map(z => ({ ...z, dist: haversine(lat, lng, z.lat, z.lng) }))
+    .sort((a, b) => a.dist - b.dist).slice(0, 3);
+  const list = document.getElementById('nearbyList');
+  if (!list) return;
+  list.innerHTML = '';
+  const icons = { metro: '🚇', hospital: '🏥', police: '👮', transit: '🚉' };
+  spots.forEach(s => {
+    const el = document.createElement('div'); el.className = 'nearby-item';
+    el.innerHTML = `
+      <div class="nearby-name">${icons[s.type] || '📍'} ${s.name}</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="nearby-dist">${s.dist < 1 ? (s.dist * 1000).toFixed(0) + ' m' : s.dist.toFixed(1) + ' km'}</span>
+        <button class="nearby-go" onclick="goToSpot(${s.lat},${s.lng})">Go →</button>
+      </div>`;
+    list.appendChild(el);
+  });
+}
+
+function calculateRouteSafety(waypoints, i) {
+  if (!waypoints || waypoints.length === 0) {
+    return { score: 70, lighting: 'Moderate', crowd: 'Medium', crime: 'Low', color: '#f59e0b', highlights: [] };
+  }
+
+  let score = 75;
+  let safeClose = 0;
+  let crimeClose = 0;
+  let lightingClose = 0;
+  let reportsClose = 0;
+
+  const step = Math.max(1, Math.floor(waypoints.length / 10));
+  for (let j = 0; j < waypoints.length; j += step) {
+    const pt = waypoints[j];
+
+    if (safetyData && safetyData.safeZones) {
+      let minSafe = Infinity;
+      safetyData.safeZones.forEach(sz => {
+        const d = haversine(pt[0], pt[1], sz.lat, sz.lng);
+        if (d < minSafe) minSafe = d;
+      });
+      if (minSafe < 0.3) safeClose++;
+    }
+
+    if (safetyData && safetyData.crimeZones) {
+      let minCrime = Infinity;
+      let crimeSeverity = 'medium';
+      safetyData.crimeZones.forEach(cz => {
+        const d = haversine(pt[0], pt[1], cz.lat, cz.lng);
+        if (d < minCrime) {
+          minCrime = d;
+          crimeSeverity = cz.severity;
+        }
+      });
+      if (minCrime < 0.25) {
+        crimeClose += (crimeSeverity === 'high' ? 1.5 : 1.0);
+      }
+    }
+
+    if (safetyData && safetyData.lightingZones) {
+      let minLight = Infinity;
+      safetyData.lightingZones.forEach(lz => {
+        const d = haversine(pt[0], pt[1], lz.lat, lz.lng);
+        if (d < minLight) minLight = d;
+      });
+      if (minLight < 0.2) lightingClose++;
+    }
+
+    let minReport = Infinity;
+    let reportSeverity = 'medium';
+    communityReports.forEach(r => {
+      if (r.lat && r.lng) {
+        const d = haversine(pt[0], pt[1], r.lat, r.lng);
+        if (d < minReport) {
+          minReport = d;
+          reportSeverity = r.severity;
+        }
+      }
+    });
+    if (minReport < 0.2) {
+      reportsClose += (reportSeverity === 'high' ? 1.5 : 1.0);
+    }
+  }
+
+  score += Math.min(20, safeClose * 3.5);
+  score -= Math.min(30, crimeClose * 8);
+  score -= Math.min(20, lightingClose * 6);
+  score -= Math.min(25, reportsClose * 7);
+
+  const currentHour = new Date().getHours();
+  let nightPenalty = 0;
+  if (isNightMode || currentHour >= 21 || currentHour <= 5) {
+    nightPenalty = 15;
+    if (currentHour >= 22 || currentHour <= 4) {
+      nightPenalty += 10;
+    }
+  }
+  score -= nightPenalty;
+
+  score = Math.max(10, Math.min(98, Math.round(score)));
+
+  if (i === 1) score = Math.max(10, Math.round(score * 0.85));
+  if (i === 2) score = Math.max(10, Math.round(score * 0.55));
+
+  const lighting = lightingClose > 1 ? 'Poor' : (safeClose > 1 && lightingClose === 0 ? 'Good' : 'Moderate');
+  const crowd = (isNightMode || currentHour >= 22 || currentHour <= 4) ? 'Low' : (safeClose > 2 ? 'High' : 'Medium');
+  const crime = (crimeClose > 1.5 || reportsClose > 1.5) ? 'High' : ((crimeClose > 0.5 || reportsClose > 0.5) ? 'Medium' : 'Low');
+  const color = score >= 70 ? '#22c55e' : score >= 45 ? '#f59e0b' : '#ef4444';
+
+  const highlights = [];
+  if (safeClose > 1) highlights.push("Passes near multiple secure zones");
+  if (lightingClose === 0) highlights.push("Good street illumination");
+  else highlights.push("Some under-lit stretches");
+  if (crimeClose > 0 || reportsClose > 0) highlights.push("Passes near flagged incident reports");
+  else highlights.push("Avoids active crime hotspots");
+  if (nightPenalty > 15) highlights.push("Avoid after hours (low public activity)");
+
+  return { score, lighting, crowd, crime, color, highlights };
+}
+
+function toggleLiveTracking() {
+  const btn = document.getElementById('trackBtn');
+  if (isTrackingActive) {
+    isTrackingActive = false;
+    btn.classList.remove('active');
+    btn.textContent = '🛰️ Live Track';
+    if (trackerWatchId !== null) {
+      navigator.geolocation.clearWatch(trackerWatchId);
+      trackerWatchId = null;
+    }
+    if (userLocMarker) {
+      map.removeLayer(userLocMarker);
+      userLocMarker = null;
+    }
+    showToast('🛰️ Live tracking disabled');
+  } else {
+    if (!navigator.geolocation) {
+      showToast('❌ Geolocation not supported');
+      return;
+    }
+    isTrackingActive = true;
+    btn.classList.add('active');
+    btn.textContent = '🛰️ Tracking…';
+    showToast('🛰️ Live tracking enabled. Walking mode active.');
+
+    trackerWatchId = navigator.geolocation.watchPosition(
+      pos => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        const latlng = [lat, lng];
+
+        if (userLocMarker) {
+          userLocMarker.setLatLng(latlng);
+        } else {
+          const icon = L.divIcon({
+            className: 'user-location-marker',
+            iconSize: [16, 16],
+            iconAnchor: [8, 8]
+          });
+          userLocMarker = L.marker(latlng, { icon }).addTo(map)
+            .bindPopup('<div class="popup-title">Your Location</div><div class="popup-body">Live tracking active</div>');
+        }
+
+        map.setView(latlng, 16);
+      },
+      err => {
+        console.error("Watch location error:", err);
+        showToast('❌ Location tracking failed');
+        isTrackingActive = false;
+        btn.classList.remove('active');
+        btn.textContent = '🛰️ Live Track';
+        if (trackerWatchId !== null) {
+          navigator.geolocation.clearWatch(trackerWatchId);
+          trackerWatchId = null;
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
+}
+
+function previewRoute(id) {
+  if (previewAnimationInterval) {
+    clearInterval(previewAnimationInterval);
+    previewAnimationInterval = null;
+  }
+  if (previewMarker) {
+    map.removeLayer(previewMarker);
+    previewMarker = null;
+  }
+
+  let route = null;
+  if (currentRouteData) {
+    route = currentRouteData.find(r => r.id === id);
+  }
+  if (!route && safetyData) {
+    route = safetyData.routes.find(r => r.id === id);
+  }
+
+  if (!route) {
+    showToast('❌ Route not found for preview');
+    return;
+  }
+
+  const waypoints = route.waypoints || route.coords;
+  if (!waypoints || waypoints.length === 0) return;
+
+  showToast(`▶ Starting route preview: ${route.name}`);
+
+  const icon = L.divIcon({
+    className: 'route-preview-marker',
+    iconSize: [14, 14],
+    iconAnchor: [7, 7]
+  });
+  previewMarker = L.marker(waypoints[0], { icon }).addTo(map);
+  map.setView(waypoints[0], 15);
+
+  let index = 0;
+  previewAnimationInterval = setInterval(() => {
+    index++;
+    if (index >= waypoints.length) {
+      clearInterval(previewAnimationInterval);
+      previewAnimationInterval = null;
+      map.removeLayer(previewMarker);
+      previewMarker = null;
+      showToast('🏁 Route preview finished');
+    } else {
+      const latlng = waypoints[index];
+      previewMarker.setLatLng(latlng);
+      map.panTo(latlng);
+    }
+  }, 450);
+}
+
+function toggleShakeSos() {
+  const chk = document.getElementById('shakeSosToggle');
+  const chkMob = document.getElementById('shakeSosToggleMob');
+  const checked = chk ? chk.checked : (chkMob ? chkMob.checked : false);
+
+  if (chk) chk.checked = checked;
+  if (chkMob) chkMob.checked = checked;
+
+  shakeEnabled = checked;
+  localStorage.setItem('sf_shake_enabled', checked ? 'true' : 'false');
+
+  if (checked) {
+    enableShakeListener();
+  } else {
+    disableShakeListener();
+  }
+}
+function toggleShakeSosMob() {
+  toggleShakeSos();
+}
+
+function enableShakeListener() {
+  if (typeof DeviceMotionEvent !== 'undefined') {
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+      const btn = document.getElementById('shakePermissionBtn');
+      const btnMob = document.getElementById('shakePermissionBtnMob');
+      if (btn) btn.style.display = 'block';
+      if (btnMob) btnMob.style.display = 'block';
+      showToast('ℹ️ Tap "Authorize" to enable motion sensor.');
+    } else {
+      window.addEventListener('devicemotion', handleMotion);
+      console.log('Shake-to-SOS listener activated.');
+    }
+  } else {
+    showToast('❌ Motion sensors not supported on this device.');
+  }
+}
+
+function disableShakeListener() {
+  window.removeEventListener('devicemotion', handleMotion);
+  const btn = document.getElementById('shakePermissionBtn');
+  const btnMob = document.getElementById('shakePermissionBtnMob');
+  if (btn) btn.style.display = 'none';
+  if (btnMob) btnMob.style.display = 'none';
+}
+
+function requestShakePermission() {
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission()
+      .then(permissionState => {
+        if (permissionState === 'granted') {
+          window.addEventListener('devicemotion', handleMotion);
+          const btn = document.getElementById('shakePermissionBtn');
+          const btnMob = document.getElementById('shakePermissionBtnMob');
+          if (btn) btn.style.display = 'none';
+          if (btnMob) btnMob.style.display = 'none';
+          showToast('✅ Sensor access granted! Shake-to-SOS active.');
+        } else {
+          showToast('❌ Sensor access denied.');
+        }
+      })
+      .catch(console.error);
+  }
+}
+
+function handleMotion(event) {
+  const acc = event.accelerationIncludingGravity || event.acceleration;
+  if (!acc) return;
+
+  const x = acc.x || 0;
+  const y = acc.y || 0;
+  const z = acc.z || 0;
+  const force = Math.sqrt(x * x + y * y + z * z);
+
+  if (force > 15) {
+    const now = Date.now();
+    if (now - lastShakeTime > 250) {
+      shakeCount++;
+      lastShakeTime = now;
+      console.log(`Shake detected! Count: ${shakeCount}`);
+
+      if (navigator.vibrate) navigator.vibrate(80);
+
+      if (shakeCount >= 3) {
+        shakeCount = 0;
+        triggerSOS();
+        showToast('🆘 SOS triggered via device shake!');
+      }
+
+      setTimeout(() => {
+        if (Date.now() - lastShakeTime > 2500) {
+          shakeCount = 0;
+        }
+      }, 2500);
+    }
+  }
+}
+
+function toggleHeatmap() {
+  const chk = document.getElementById('heatmapToggle');
+  isHeatmapActive = chk ? chk.checked : false;
+
+  if (isHeatmapActive) {
+    crimeCircles.forEach(c => map.removeLayer(c));
+    reportMarkers.forEach(m => map.removeLayer(m));
+    renderHeatmap();
+    showToast('🔥 Heatmap layer active');
+  } else {
+    if (heatmapLayer) {
+      map.removeLayer(heatmapLayer);
+      heatmapLayer = null;
+    }
+    renderCrimeZones();
+    renderReportMarkers();
+    showToast('🔥 Heatmap layer disabled');
+  }
+}
+
+function renderHeatmap() {
+  if (heatmapLayer) {
+    map.removeLayer(heatmapLayer);
+    heatmapLayer = null;
+  }
+  if (!isHeatmapActive) return;
+
+  let points = [];
+
+  if (safetyData && safetyData.crimeZones) {
+    safetyData.crimeZones.forEach(z => {
+      const intensity = z.severity === 'high' ? 0.9 : z.severity === 'medium' ? 0.6 : 0.3;
+      points.push([z.lat, z.lng, intensity]);
+    });
+  }
+
+  communityReports.forEach(r => {
+    if (r.lat && r.lng) {
+      const intensity = r.severity === 'high' ? 0.9 : r.severity === 'medium' ? 0.6 : 0.3;
+      points.push([r.lat, r.lng, intensity]);
+    }
+  });
+
+  if (points.length > 0 && typeof L.heatLayer === 'function') {
+    heatmapLayer = L.heatLayer(points, {
+      radius: 35,
+      blur: 20,
+      maxZoom: 18,
+      gradient: { 0.3: 'blue', 0.5: 'lime', 0.7: 'orange', 1.0: 'red' }
+    }).addTo(map);
+  }
+}
+
+function bookCab(provider, lat, lng, name) {
+  let url = '';
+  if (provider === 'uber') {
+    url = `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${lat}&dropoff[longitude]=${lng}&dropoff[nickname]=${encodeURIComponent(name)}`;
+  } else if (provider === 'ola') {
+    url = `olacabs://navigate?lat=${lat}&lng=${lng}&utm_source=soloforce`;
+  }
+  showToast(`🚕 Opening ${provider === 'uber' ? 'Uber' : 'Ola'}...`);
+  window.open(url, '_blank');
+}
+
+function addTrustedContact() {
+  const n = document.getElementById('trustedName').value.trim();
+  const p = document.getElementById('trustedPhone').value.trim();
+  if (!n) { showToast('⚠️ Enter a contact name'); return; }
+  if (!p) { showToast('⚠️ Enter a phone number'); return; }
+  if (!/[0-9+]/.test(p)) { showToast('⚠️ Enter a valid phone number'); return; }
+
+  const c = { id: Date.now(), name: n, phone: p };
+  trustedContacts.push(c);
+  localStorage.setItem('sf_trusted_contacts', JSON.stringify(trustedContacts));
+
+  document.getElementById('trustedName').value = '';
+  document.getElementById('trustedPhone').value = '';
+
+  renderTrustedContacts();
+  showToast(`✅ ${n} added as trusted contact!`);
+}
+
+function addTrustedContactMob() {
+  const n = document.getElementById('trustedNameMob').value.trim();
+  const p = document.getElementById('trustedPhoneMob').value.trim();
+  if (!n) { showToast('⚠️ Enter a contact name'); return; }
+  if (!p) { showToast('⚠️ Enter a phone number'); return; }
+  if (!/[0-9+]/.test(p)) { showToast('⚠️ Enter a valid phone number'); return; }
+
+  const c = { id: Date.now(), name: n, phone: p };
+  trustedContacts.push(c);
+  localStorage.setItem('sf_trusted_contacts', JSON.stringify(trustedContacts));
+
+  document.getElementById('trustedNameMob').value = '';
+  document.getElementById('trustedPhoneMob').value = '';
+
+  renderTrustedContacts();
+  showToast(`✅ ${n} added as trusted contact!`);
+}
+
+function removeTrustedContact(id) {
+  trustedContacts = trustedContacts.filter(c => c.id !== id);
+  localStorage.setItem('sf_trusted_contacts', JSON.stringify(trustedContacts));
+  renderTrustedContacts();
+  showToast('❌ Contact removed');
+}
+
+function renderTrustedContacts() {
+  const lists = ['trustedContactsList', 'trustedContactsListMob'];
+  lists.forEach(listId => {
+    const el = document.getElementById(listId);
+    if (!el) return;
+    el.innerHTML = '';
+
+    if (trustedContacts.length === 0) {
+      el.innerHTML = `<p class="sp-hint" style="font-style:italic">No trusted contacts added yet.</p>`;
+      return;
+    }
+
+    trustedContacts.forEach(c => {
+      const row = document.createElement('div');
+      row.className = 'contact-item';
+
+      const rawPhone = c.phone.replace(/[\s\-().]/g, '');
+      const e164 = rawPhone.startsWith('+') ? rawPhone : `+91${rawPhone}`;
+      const msg = encodeURIComponent(`🆘 SOS Alert! I need help. My current location: (view app for GPS details)`);
+
+      row.innerHTML = `
+        <div class="contact-info">
+          <span class="contact-name">👤 ${c.name}</span>
+          <span class="contact-phone">${c.phone}</span>
+        </div>
+        <div class="contact-actions">
+          <a href="tel:${rawPhone}" class="contact-act-btn" title="Call">📞</a>
+          <a href="https://wa.me/${e164.replace('+', '')}?text=${msg}" target="_blank" class="contact-act-btn" title="WhatsApp">💬</a>
+          <a href="sms:${rawPhone}?body=${msg}" class="contact-act-btn" title="SMS">✉️</a>
+          <button class="contact-remove" onclick="removeTrustedContact(${c.id})">✕</button>
+        </div>
+      `;
+      el.appendChild(row);
+    });
+  });
+}
+
+function changeLanguage(lang) {
+  currentLanguage = lang;
+  localStorage.setItem('sf_lang', lang);
+  const langSelect = document.getElementById('langSelect');
+  if (langSelect) langSelect.value = lang;
+  applyLanguageUpdates();
+}
+
+function applyLanguageUpdates() {
+  const dict = TRANSLATIONS[currentLanguage] || TRANSLATIONS.en;
+
+  const logoTag = document.querySelector('.logo-tag');
+  if (logoTag) logoTag.textContent = dict.logoTag;
+
+  const navBtns = document.querySelectorAll('.nav-btn');
+  navBtns.forEach(btn => {
+    const tab = btn.dataset.tab;
+    if (tab === 'map') btn.textContent = dict.navMap;
+    if (tab === 'report') btn.textContent = dict.navReport;
+    if (tab === 'analytics') btn.textContent = dict.navAnalytics;
+  });
+
+  const mobNavBtns = document.querySelectorAll('.mob-nav-btn');
+  mobNavBtns.forEach(btn => {
+    const tab = btn.dataset.tab;
+    if (tab === 'map') btn.textContent = dict.navMap;
+    if (tab === 'report') btn.textContent = dict.navReport;
+    if (tab === 'analytics') btn.textContent = dict.navAnalytics;
+  });
+
+  const swBtn = document.querySelector('.sw-idle-btn');
+  if (swBtn) swBtn.textContent = dict.btnSafeWalk;
+
+  const findBtnTxt = document.querySelector('.find-txt');
+  if (findBtnTxt) findBtnTxt.textContent = dict.btnFindRoutes;
+
+  const pinBtn = document.getElementById('pinBtn');
+  if (pinBtn && !pinModeActive) pinBtn.textContent = dict.btnReportArea;
+  const trackBtn = document.getElementById('trackBtn');
+  if (trackBtn && !isTrackingActive) trackBtn.textContent = dict.btnLiveTrack;
+
+  const filterLbl = document.querySelector('.filter-lbl');
+  if (filterLbl) filterLbl.textContent = dict.lblLayers;
+
+  const btnDay = document.getElementById('btnDay');
+  if (btnDay) btnDay.textContent = dict.lblDay;
+  const btnNight = document.getElementById('btnNight');
+  if (btnNight) btnNight.textContent = dict.lblNight;
+
+  const spRoutesTitle = document.querySelector('#sp-routes .sp-title');
+  if (spRoutesTitle) spRoutesTitle.textContent = dict.lblSuggestedRoutes;
+
+  const spSafetyTitle = document.querySelector('#sp-safety .sp-title');
+  if (spSafetyTitle) spSafetyTitle.textContent = dict.lblSafetyOverview;
+
+  const spSafetyNearby = document.querySelector('.nearby-wrap .sp-title');
+  if (spSafetyNearby) spSafetyNearby.textContent = dict.lblSafeSpotsNearby;
+
+  const spEmergencyTitle = document.querySelector('#sp-emergency .sp-title');
+  if (spEmergencyTitle) spEmergencyTitle.textContent = dict.lblEmergencyContacts;
+
+  const lblTrustedHeading = document.getElementById('lblTrustedHeading');
+  if (lblTrustedHeading) lblTrustedHeading.textContent = dict.lblTrustedContacts;
+  const lblTrustedHint = document.getElementById('lblTrustedHint');
+  if (lblTrustedHint) lblTrustedHint.textContent = dict.lblTrustedHint;
+
+  const lblShakeSosHeading = document.getElementById('lblShakeSosHeading');
+  if (lblShakeSosHeading) lblShakeSosHeading.textContent = dict.lblShakeSosHeading;
+  const lblShakeSosHint = document.getElementById('lblShakeSosHint');
+  if (lblShakeSosHint) lblShakeSosHint.textContent = dict.lblShakeSosHint;
+  const lblEnableShake = document.getElementById('lblEnableShake');
+  if (lblEnableShake) lblEnableShake.textContent = dict.lblEnableShake;
+
+  const lblSafeWalkHeading = document.getElementById('lblSafeWalkHeading');
+  if (lblSafeWalkHeading) lblSafeWalkHeading.textContent = dict.lblSafeWalkHeading;
+
+  const lblTrustedHeadingMob = document.getElementById('lblTrustedHeadingMob');
+  if (lblTrustedHeadingMob) lblTrustedHeadingMob.textContent = dict.lblTrustedContacts;
+  const lblShakeSosHeadingMob = document.getElementById('lblShakeSosHeadingMob');
+  if (lblShakeSosHeadingMob) lblShakeSosHeadingMob.textContent = dict.lblShakeSosHeading;
+  const lblEnableShakeMob = document.getElementById('lblEnableShakeMob');
+  if (lblEnableShakeMob) lblEnableShakeMob.textContent = dict.lblEnableShake;
+
+  const repTitle = document.querySelector('#tab-report .page-title');
+  if (repTitle) repTitle.textContent = dict.lblReportTitle;
+  const repSub = document.querySelector('#tab-report .page-sub');
+  if (repSub) repSub.textContent = dict.lblReportSub;
+  const repFormLabels = document.querySelectorAll('#tab-report .form-lbl');
+  if (repFormLabels.length > 0) {
+    if (repFormLabels[0]) repFormLabels[0].textContent = dict.lblIncidentType;
+    if (repFormLabels[1]) repFormLabels[1].textContent = dict.lblLocation;
+    if (repFormLabels[2]) repFormLabels[2].textContent = dict.lblWhen;
+    if (repFormLabels[3]) repFormLabels[3].textContent = dict.lblDescription;
+    if (repFormLabels[4]) repFormLabels[4].textContent = dict.lblSeverity;
+    if (repFormLabels[5]) repFormLabels[5].textContent = dict.lblPrivacy;
+  }
+  const submitBtn = document.querySelector('#tab-report .submit-btn');
+  if (submitBtn) submitBtn.textContent = dict.btnSubmitReport;
+
+  const analTitle = document.querySelector('#tab-analytics .page-title');
+  if (analTitle) analTitle.textContent = dict.lblAnalyticsTitle;
+  const analSub = document.querySelector('#tab-analytics .page-sub');
+  if (analSub) analSub.textContent = dict.lblAnalyticsSub;
+
+  const statLabels = document.querySelectorAll('#tab-analytics .stat-l');
+  if (statLabels.length > 0) {
+    if (statLabels[0]) statLabels[0].textContent = dict.lblReportsThisWeek;
+    if (statLabels[1]) statLabels[1].textContent = dict.lblRoutesRatedSafe;
+    if (statLabels[2]) statLabels[2].textContent = dict.lblActiveDangerZones;
+    if (statLabels[3]) statLabels[3].textContent = dict.lblCommunityMembers;
+  }
+  const chartTitles = document.querySelectorAll('#tab-analytics .chart-t');
+  if (chartTitles.length > 0) {
+    if (chartTitles[0]) chartTitles[0].textContent = dict.lblSafetyByHour;
+    if (chartTitles[1]) chartTitles[1].textContent = dict.lblIncidentBreakdown;
+    if (chartTitles[2]) chartTitles[2].textContent = dict.lblWeeklySafetyTrend;
+  }
+}
+
+const TRANSLATIONS = {
+  en: {
+    logoTag: "Safe Navigation",
+    navMap: "🗺 Map",
+    navReport: "📍 Report",
+    navAnalytics: "📊 Analytics",
+    btnSafeWalk: "🚶 Safe Walk",
+    btnFindRoutes: "Find Safe Routes",
+    btnReportArea: "📌 Report Area",
+    btnLiveTrack: "🛰️ Live Track",
+    lblLayers: "Layers",
+    lblDay: "☀️ Day",
+    lblNight: "🌙 Night",
+    lblSuggestedRoutes: "Suggested Routes",
+    lblSafetyOverview: "Area Safety Overview",
+    lblSafeSpotsNearby: "🏥 Safe Spots Nearby",
+    lblEmergencyContacts: "Emergency Contacts",
+    lblTrustedContacts: "👤 Trusted Contacts",
+    lblTrustedHint: "Save contacts to receive WhatsApp + SMS alerts when you trigger SOS.",
+    lblSafeWalkTimer: "🚶 Safe Walk Timer",
+    lblShakeSosHeading: "📳 Shake-to-SOS Settings",
+    lblEnableShake: "Enable Shake-to-SOS",
+    lblReportTitle: "📍 Report an Unsafe Area",
+    lblReportSub: "Help keep the community safe by reporting incidents.",
+    lblIncidentType: "Incident Type",
+    lblLocation: "Location",
+    lblWhen: "When",
+    lblDescription: "Description",
+    lblSeverity: "Severity",
+    lblPrivacy: "Privacy",
+    btnSubmitReport: "Submit Report →",
+    lblAnalyticsTitle: "📊 Safety Analytics",
+    lblAnalyticsSub: "Community-driven safety intelligence for your area.",
+    lblReportsThisWeek: "Reports This Week",
+    lblRoutesRatedSafe: "Routes Rated Safe",
+    lblActiveDangerZones: "Active Danger Zones",
+    lblCommunityMembers: "Community Members",
+    lblSafetyByHour: "🕐 Safety by Hour of Day",
+    lblIncidentBreakdown: "📋 Incident Type Breakdown",
+    lblWeeklySafetyTrend: "📈 Weekly Safety Trend"
+  },
+  hi: {
+    logoTag: "सुरक्षित नेविगेशन",
+    navMap: "🗺 मानचित्र",
+    navReport: "📍 रिपोर्ट",
+    navAnalytics: "📊 विश्लेषिकी",
+    btnSafeWalk: "🚶 सुरक्षित यात्रा",
+    btnFindRoutes: "सुरक्षित मार्ग खोजें",
+    btnReportArea: "📌 क्षेत्र की रिपोर्ट करें",
+    btnLiveTrack: "🛰️ लाइव ट्रैक",
+    lblLayers: "पर्तें",
+    lblDay: "☀️ दिन",
+    lblNight: "🌙 रात",
+    lblSuggestedRoutes: "सुझाए गए मार्ग",
+    lblSafetyOverview: "क्षेत्र सुरक्षा समीक्षा",
+    lblSafeSpotsNearby: "🏥 आस-पास के सुरक्षित स्थान",
+    lblEmergencyContacts: "आपातकालीन संपर्क",
+    lblTrustedContacts: "👤 विश्वसनीय संपर्क",
+    lblTrustedHint: "एसओएस ट्रिगर होने पर व्हाट्सएप + एसएमएस अलर्ट प्राप्त करने के लिए संपर्कों को सहेजें।",
+    lblSafeWalkTimer: "🚶 सुरक्षित यात्रा टाइमर",
+    lblShakeSosHeading: "📳 शेक-टू-एसओएस सेटिंग्स",
+    lblEnableShake: "शेक-टू-एसओएस चालू करें",
+    lblReportTitle: "📍 असुरक्षित क्षेत्र की रिपोर्ट करें",
+    lblReportSub: "घटनाओं की रिपोर्ट करके समुदाय को सुरक्षित रखने में मदद करें।",
+    lblIncidentType: "घटना का प्रकार",
+    lblLocation: "स्थान",
+    lblWhen: "कब",
+    lblDescription: "विवरण",
+    lblSeverity: "तीव्रता",
+    lblPrivacy: "गोपनीयता",
+    btnSubmitReport: "रिपोर्ट भेजें →",
+    lblAnalyticsTitle: "📊 सुरक्षा विश्लेषिकी",
+    lblAnalyticsSub: "आपके क्षेत्र के लिए समुदाय-संचालित सुरक्षा जानकारी।",
+    lblReportsThisWeek: "इस सप्ताह की रिपोर्ट",
+    lblRoutesRatedSafe: "सुरक्षित मार्ग प्रतिशत",
+    lblActiveDangerZones: "सक्रिय खतरा क्षेत्र",
+    lblCommunityMembers: "समुदाय के सदस्य",
+    lblSafetyByHour: "🕐 दिन के घंटों के अनुसार सुरक्षा",
+    lblIncidentBreakdown: "📋 घटनाओं का वर्गीकरण",
+    lblWeeklySafetyTrend: "📈 साप्ताहिक सुरक्षा रुझान"
+  },
+  bn: {
+    logoTag: "নিরাপদ নেভিগেশন",
+    navMap: "🗺 মানচিত্র",
+    navReport: "📍 রিপোর্ট করুন",
+    navAnalytics: "📊 অ্যানালিটিক্স",
+    btnSafeWalk: "🚶 সেফ ওয়াক",
+    btnFindRoutes: "নিরাপদ রুট খুঁজুন",
+    btnReportArea: "📌 এলাকা রিপোর্ট করুন",
+    btnLiveTrack: "🛰️ লাইভ ট্র্যাক",
+    lblLayers: "লেয়ার সমূহ",
+    lblDay: "☀️ দিন",
+    lblNight: "🌙 রাত",
+    lblSuggestedRoutes: "প্রস্তাবিত রুট",
+    lblSafetyOverview: "এলাকার নিরাপত্তা ওভারভিউ",
+    lblSafeSpotsNearby: "🏥 কাছাকাছি নিরাপদ স্থান",
+    lblEmergencyContacts: "জরুরি যোগাযোগ",
+    lblTrustedContacts: "👤 বিশ্বস্ত যোগাযোগ",
+    lblTrustedHint: "আপনি যখন এসওএস ট্রিগার করবেন তখন হোয়াটসঅ্যাপ + এসএমএস অ্যালার্ট পেতে কন্টাক্ট সেভ করুন।",
+    lblSafeWalkTimer: "🚶 সেফ ওয়াক টাইমার",
+    lblShakeSosHeading: "📳 শেক-টু-এসওএস সেটিংস",
+    lblEnableShake: "শেক-টু-এসওএস চালু করুন",
+    lblReportTitle: "📍 অনিরাপদ এলাকা রিপোর্ট করুন",
+    lblReportSub: "ঘটনা রিপোর্ট করে সম্প্রদায়কে নিরাপদ রাখতে সাহায্য করুন।",
+    lblIncidentType: "ঘটনার ধরণ",
+    lblLocation: "অবস্থান",
+    lblWhen: "কখন",
+    lblDescription: "বর্ণনা",
+    lblSeverity: "তীব্রতা",
+    lblPrivacy: "গোপনীয়তা",
+    btnSubmitReport: "রিপোর্ট জমা দিন →",
+    lblAnalyticsTitle: "📊 নিরাপত্তা অ্যানালিটিক্স",
+    lblAnalyticsSub: "আপনার এলাকার জন্য সম্প্রদায়-চালিত নিরাপত্তা তথ্য।",
+    lblReportsThisWeek: "এই সপ্তাহের রিপোর্ট",
+    lblRoutesRatedSafe: "নিরাপদ রেট করা রুট",
+    lblActiveDangerZones: "সক্রিয় বিপদ অঞ্চল",
+    lblCommunityMembers: "কমিউনিটি সদস্য",
+    lblSafetyByHour: "🕐 ঘন্টা ভিত্তিক নিরাপত্তা",
+    lblIncidentBreakdown: "📋 ঘটনার ধরণ ব্রেকডাউন",
+    lblWeeklySafetyTrend: "📈 সাপ্তাহিক নিরাপত্তা ট্রেন্ড"
+  },
+  ta: {
+    logoTag: "பாதுகாப்பான வழிசெலுத்தல்",
+    navMap: "🗺 வரைபடம்",
+    navReport: "📍 புகாரளிக்கவும்",
+    navAnalytics: "📊 பகுப்பாய்வு",
+    btnSafeWalk: "🚶 பாதுகாப்பான நடை",
+    btnFindRoutes: "பாதுகாப்பான வழியைக் கண்டுபிடி",
+    btnReportArea: "📌 பகுதியை புகாரளிக்கவும்",
+    btnLiveTrack: "🛰️ நேரடி கண்காணிப்பு",
+    lblLayers: "அடுக்குகள்",
+    lblDay: "☀️ பகல்",
+    lblNight: "🌙 இரவு",
+    lblSuggestedRoutes: "பரிந்துரைக்கப்பட்ட வழிகள்",
+    lblSafetyOverview: "பகுதி பாதுகாப்பு மேலோட்டம்",
+    lblSafeSpotsNearby: "🏥 அருகிலுள்ள பாதுகாப்பான இடங்கள்",
+    lblEmergencyContacts: "அவசர தொடர்புகள்",
+    lblTrustedContacts: "👤 நம்பகமான தொடர்புகள்",
+    lblTrustedHint: "நீங்கள் SOS ஐத் தூண்டும்போது வாட்ஸ்அப் + எஸ்எம்எஸ் விழிப்பூட்டல்களைப் பெற தொடர்புகளைச் சேமிக்கவும்.",
+    lblSafeWalkTimer: "🚶 பாதுகாப்பான நடை டைமர்",
+    lblShakeSosHeading: "📳 குலுக்கல்-SOS அமைப்புகள்",
+    lblEnableShake: "குலுக்கல்-SOS ஐ இயக்கு",
+    lblReportTitle: "📍 பாதுகாப்பற்ற பகுதியை புகாரளிக்கவும்",
+    lblReportSub: "சம்பவங்களைப் புகாரளிப்பதன் மூலம் சமூகத்தைப் பாதுகாப்பாக வைத்திருக்க உதவவும்.",
+    lblIncidentType: "சம்பவ வகை",
+    lblLocation: "இருப்பிடம்",
+    lblWhen: "எப்போது",
+    lblDescription: "விளக்கம்",
+    lblSeverity: "தீவிரம்",
+    lblPrivacy: "தனியுரிமை",
+    btnSubmitReport: "புகாரைச் சமர்ப்பிக்கவும் →",
+    lblAnalyticsTitle: "📊 பாதுகாப்பு பகுாய்வு",
+    lblAnalyticsSub: "உங்கள் பகுதிக்கான சமூக பாதுகாப்பு நுண்ணறிவு.",
+    lblReportsThisWeek: "இந்த வார அறிக்கைகள்",
+    lblRoutesRatedSafe: "பாதுகாப்பான வழிகள்",
+    lblActiveDangerZones: "செயலில் உள்ள ஆபத்து மண்டலங்கள்",
+    lblCommunityMembers: "சமூக உறுப்பினர்கள்",
+    lblSafetyByHour: "🕐 மணிநேர பாதுகாப்பு விபரம்",
+    lblIncidentBreakdown: "📋 சம்பவ வகை பகுப்பாய்வு",
+    lblWeeklySafetyTrend: "📈 வாராந்திர பாதுகாப்பு போக்கு"
+  }
+};
