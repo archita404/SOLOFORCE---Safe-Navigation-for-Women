@@ -96,5 +96,3 @@ Add a new locale object to `TRANSLATIONS` in `app.js`, matching the keys used in
 
 ---
 
-Built by **Archita Singha**
-
